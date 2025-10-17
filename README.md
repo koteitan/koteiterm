@@ -30,10 +30,45 @@ make
 
 ### オプション
 
+#### 基本オプション
+
 ```bash
 ./koteiterm --help       # ヘルプを表示
 ./koteiterm --version    # バージョン情報を表示
 ./koteiterm --debug-key  # キー入力のデバッグ情報を表示
+```
+
+#### 色設定オプション
+
+```bash
+./koteiterm -fg <color>      # 前景色を指定
+./koteiterm -bg <color>      # 背景色を指定
+./koteiterm -cr <color>      # カーソル色を指定
+./koteiterm -selbg <color>   # 選択背景色を指定
+./koteiterm -selfg <color>   # 選択前景色を指定
+```
+
+**色の指定方法:**
+- 色名: `red`, `blue`, `white`, `black`, `green`, `yellow`, `cyan`, `magenta`, `orange`, `purple`, `pink`, `brown`, `gray` など
+- #RGB形式: `#f00` (赤), `#0f0` (緑), `#00f` (青)
+- #RRGGBB形式: `#ff0000` (赤), `#00ff00` (緑), `#0000ff` (青)
+- rgb:RR/GG/BB形式: `rgb:ff/00/00` (赤)
+- rgb:RRRR/GGGG/BBBB形式: `rgb:ffff/0000/0000` (赤)
+
+**使用例:**
+
+```bash
+# 緑の文字に黒背景、赤いカーソル
+./koteiterm -fg green -bg black -cr red
+
+# 色コード指定
+./koteiterm -fg "#00ff00" -bg "#000000" -cr "#ff0000"
+
+# 選択範囲の色をカスタマイズ
+./koteiterm -selbg blue -selfg white
+
+# 組み合わせ
+./koteiterm -fg cyan -bg "#1a1a1a" -cr orange -selbg "#404040" -selfg yellow
 ```
 
 ## 操作方法
@@ -124,10 +159,17 @@ make
 
 ### マウス選択とクリップボード
 - ✅ マウスドラッグでテキスト選択
-- ✅ 選択範囲のハイライト表示（色反転）
+- ✅ 選択範囲のハイライト表示（カスタマイズ可能）
 - ✅ X11 PRIMARYクリップボードへの自動コピー
 - ✅ 中ボタンクリックで貼り付け
 - ✅ 他アプリケーションとのクリップボード共有
+
+### 色カスタマイズ
+- ✅ xterm互換の色設定オプション
+- ✅ 前景色・背景色の変更 (`-fg`/`-bg`)
+- ✅ カーソル色のカスタマイズ (`-cr`)
+- ✅ 選択範囲の色のカスタマイズ (`-selbg`/`-selfg`)
+- ✅ 複数の色指定形式（色名、#RGB、#RRGGBB、rgb:形式）
 
 ### フォント
 - ✅ デフォルト: HackGen Console NF（日本語+Nerd Fonts統合フォント）
@@ -161,7 +203,8 @@ koteiterm/
 │   ├── pty.c/h         # PTYとシェル管理
 │   ├── font.c/h        # フォント描画
 │   ├── terminal.c/h    # ターミナルバッファとVT100パーサー
-│   └── input.c/h       # キーボード入力処理
+│   ├── input.c/h       # キーボード入力処理
+│   └── color.c/h       # 色パース処理
 ├── include/
 │   └── koteiterm.h     # 共通ヘッダー
 ├── Makefile

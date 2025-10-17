@@ -18,6 +18,10 @@ typedef struct {
     XftDraw *xft_draw;       /* Xft描画コンテキスト */
     XftColor xft_fg;         /* 前景色 */
     XftColor xft_bg;         /* 背景色 */
+    XftColor xft_cursor;     /* カーソル色 */
+    XftColor xft_sel_bg;     /* 選択背景色 */
+    XftColor xft_sel_fg;     /* 選択前景色 */
+    XftColor xft_underline;  /* アンダーライン色 */
     XIM xim;                 /* Input Method */
     XIC xic;                 /* Input Context */
 } DisplayState;

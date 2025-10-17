@@ -116,8 +116,11 @@ int pty_init(int rows, int cols)
     close(g_pty.slave_fd);
     g_pty.slave_fd = -1;
 
-    printf("PTYを初期化しました (fd=%d, pid=%d, %dx%d)\n",
-           g_pty.master_fd, g_pty.child_pid, cols, rows);
+    extern bool g_debug;
+    if (g_debug) {
+        printf("PTYを初期化しました (fd=%d, pid=%d, %dx%d)\n",
+               g_pty.master_fd, g_pty.child_pid, cols, rows);
+    }
 
     return 0;
 }
@@ -127,9 +130,12 @@ int pty_init(int rows, int cols)
  */
 void pty_cleanup(void)
 {
+    extern bool g_debug;
     if (g_pty.child_running && g_pty.child_pid > 0) {
         /* 子プロセスに終了シグナルを送信 */
-        printf("子プロセス (PID=%d) を終了しています...\n", g_pty.child_pid);
+        if (g_debug) {
+            printf("子プロセス (PID=%d) を終了しています...\n", g_pty.child_pid);
+        }
         kill(g_pty.child_pid, SIGTERM);
 
         /* 子プロセスの終了を待つ（タイムアウト付き） */
@@ -162,7 +168,9 @@ void pty_cleanup(void)
 
     g_pty.child_pid = -1;
 
-    printf("PTYをクリーンアップしました\n");
+    if (g_debug) {
+        printf("PTYをクリーンアップしました\n");
+    }
 }
 
 /**
@@ -223,7 +231,10 @@ int pty_resize(int rows, int cols)
         return -1;
     }
 
-    printf("PTYウィンドウサイズを変更しました (%dx%d)\n", cols, rows);
+    extern bool g_debug;
+    if (g_debug) {
+        printf("PTYウィンドウサイズを変更しました (%dx%d)\n", cols, rows);
+    }
 
     return 0;
 }
@@ -243,13 +254,16 @@ bool pty_is_child_running(void)
 
     if (result > 0) {
         /* 子プロセスが終了した */
-        printf("子プロセス (PID=%d) が終了しました ", g_pty.child_pid);
-        if (WIFEXITED(status)) {
-            printf("(exit status=%d)\n", WEXITSTATUS(status));
-        } else if (WIFSIGNALED(status)) {
-            printf("(signal=%d)\n", WTERMSIG(status));
-        } else {
-            printf("\n");
+        extern bool g_debug;
+        if (g_debug) {
+            printf("子プロセス (PID=%d) が終了しました ", g_pty.child_pid);
+            if (WIFEXITED(status)) {
+                printf("(exit status=%d)\n", WEXITSTATUS(status));
+            } else if (WIFSIGNALED(status)) {
+                printf("(signal=%d)\n", WTERMSIG(status));
+            } else {
+                printf("\n");
+            }
         }
         g_pty.child_running = false;
         return false;

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 /* グローバルフォント状態 */
 FontState g_font = {0};
@@ -40,8 +41,11 @@ int font_init(Display *display, int screen, const char *font_name, int font_size
                        (FcChar8 *)"M", 1, &extents);
     g_font.char_width = extents.xOff;
 
-    printf("フォントを初期化しました: %s (幅=%d, 高さ=%d)\n",
-           font_pattern, g_font.char_width, g_font.char_height);
+    extern bool g_debug;
+    if (g_debug) {
+        printf("フォントを初期化しました: %s (幅=%d, 高さ=%d)\n",
+               font_pattern, g_font.char_width, g_font.char_height);
+    }
 
     return 0;
 }
@@ -58,7 +62,10 @@ void font_cleanup(Display *display)
 
     memset(&g_font, 0, sizeof(g_font));
 
-    printf("フォントをクリーンアップしました\n");
+    extern bool g_debug;
+    if (g_debug) {
+        printf("フォントをクリーンアップしました\n");
+    }
 }
 
 /**

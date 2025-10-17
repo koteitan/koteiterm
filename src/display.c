@@ -8,6 +8,8 @@
 #include "terminal.h"
 #include "input.h"
 #include "pty.h"
+#include "color.h"
+#include "koteiterm.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -101,6 +103,49 @@ static XftColor *get_color(uint8_t idx)
     }
 
     return &xft_color_cache[idx];
+}
+
+/**
+ * 色文字列をパースしてXftColorを割り当てる
+ * @param color_str 色文字列（NULL可）
+ * @param default_r デフォルトR値
+ * @param default_g デフォルトG値
+ * @param default_b デフォルトB値
+ * @param xft_color 出力先XftColor
+ * @return 成功時true、失敗時false
+ */
+static bool parse_and_alloc_color(const char *color_str,
+                                  uint16_t default_r, uint16_t default_g, uint16_t default_b,
+                                  XftColor *xft_color)
+{
+    Visual *visual = DefaultVisual(g_display.display, g_display.screen);
+    Colormap colormap = DefaultColormap(g_display.display, g_display.screen);
+    XRenderColor xr_color;
+
+    if (color_str) {
+        /* 色文字列をパース */
+        ColorRGB rgb;
+        if (color_parse(color_str, &rgb)) {
+            xr_color.red = rgb.r;
+            xr_color.green = rgb.g;
+            xr_color.blue = rgb.b;
+            xr_color.alpha = 0xffff;
+        } else {
+            fprintf(stderr, "警告: 色 '%s' のパースに失敗しました。デフォルト色を使用します\n", color_str);
+            xr_color.red = default_r;
+            xr_color.green = default_g;
+            xr_color.blue = default_b;
+            xr_color.alpha = 0xffff;
+        }
+    } else {
+        /* デフォルト色を使用 */
+        xr_color.red = default_r;
+        xr_color.green = default_g;
+        xr_color.blue = default_b;
+        xr_color.alpha = 0xffff;
+    }
+
+    return XftColorAllocValue(g_display.display, visual, colormap, &xr_color, xft_color) != 0;
 }
 
 /* UTF-8エンコード関数 */
@@ -200,11 +245,13 @@ int display_init(int width, int height)
         return -1;
     }
 
-    /* デフォルト色を設定（白の前景、黒の背景） */
-    XRenderColor xr_fg = {0xffff, 0xffff, 0xffff, 0xffff};  /* 白 */
-    XRenderColor xr_bg = {0x0000, 0x0000, 0x0000, 0xffff};  /* 黒 */
-    XftColorAllocValue(g_display.display, visual, colormap, &xr_fg, &g_display.xft_fg);
-    XftColorAllocValue(g_display.display, visual, colormap, &xr_bg, &g_display.xft_bg);
+    /* 色を設定（コマンドラインオプションまたはデフォルト） */
+    parse_and_alloc_color(g_color_options.foreground, 0xffff, 0xffff, 0xffff, &g_display.xft_fg);  /* デフォルト: 白 */
+    parse_and_alloc_color(g_color_options.background, 0x0000, 0x0000, 0x0000, &g_display.xft_bg);  /* デフォルト: 黒 */
+    parse_and_alloc_color(g_color_options.cursor, 0xff00, 0x0000, 0x0000, &g_display.xft_cursor);  /* デフォルト: 赤 */
+    parse_and_alloc_color(g_color_options.sel_bg, 0x5c5c, 0x5c5c, 0x5c5c, &g_display.xft_sel_bg);  /* デフォルト: グレー */
+    parse_and_alloc_color(g_color_options.sel_fg, 0xffff, 0xffff, 0xffff, &g_display.xft_sel_fg);  /* デフォルト: 白 */
+    parse_and_alloc_color(g_color_options.underline, 0xffff, 0xffff, 0xffff, &g_display.xft_underline);  /* デフォルト: 白 */
 
     /* ANSI 16色を初期化 */
     for (int i = 0; i < 16; i++) {
@@ -239,11 +286,15 @@ int display_init(int width, int height)
         } else {
             /* フォーカスを設定 */
             XSetICFocus(g_display.xic);
-            printf("XIM/XICを初期化しました（日本語入力が利用可能）\n");
+            if (g_debug) {
+                printf("XIM/XICを初期化しました（日本語入力が利用可能）\n");
+            }
         }
     }
 
-    printf("X11ディスプレイを初期化しました (%dx%d)\n", width, height);
+    if (g_debug) {
+        printf("X11ディスプレイを初期化しました (%dx%d)\n", width, height);
+    }
 
     return 0;
 }
@@ -276,6 +327,10 @@ void display_cleanup(void)
     Colormap colormap = DefaultColormap(g_display.display, g_display.screen);
     XftColorFree(g_display.display, visual, colormap, &g_display.xft_fg);
     XftColorFree(g_display.display, visual, colormap, &g_display.xft_bg);
+    XftColorFree(g_display.display, visual, colormap, &g_display.xft_cursor);
+    XftColorFree(g_display.display, visual, colormap, &g_display.xft_sel_bg);
+    XftColorFree(g_display.display, visual, colormap, &g_display.xft_sel_fg);
+    XftColorFree(g_display.display, visual, colormap, &g_display.xft_underline);
 
     /* 初期化済みの色を解放 */
     for (int i = 0; i < 256; i++) {
@@ -301,7 +356,9 @@ void display_cleanup(void)
         selection_text = NULL;
     }
 
-    printf("X11ディスプレイをクリーンアップしました\n");
+    if (g_debug) {
+        printf("X11ディスプレイをクリーンアップしました\n");
+    }
 
     memset(&g_display, 0, sizeof(g_display));
 }
@@ -340,7 +397,9 @@ bool display_handle_events(void)
             case ClientMessage:
                 /* ウィンドウマネージャからのメッセージ */
                 if ((Atom)event.xclient.data.l[0] == g_display.wm_delete_window) {
-                    printf("ウィンドウクローズが要求されました\n");
+                    if (g_debug) {
+                        printf("ウィンドウクローズが要求されました\n");
+                    }
                     return false;  /* 終了 */
                 }
                 break;
@@ -351,8 +410,10 @@ bool display_handle_events(void)
                     event.xconfigure.height != g_display.height) {
                     g_display.width = event.xconfigure.width;
                     g_display.height = event.xconfigure.height;
-                    printf("ウィンドウサイズ変更: %dx%d\n",
-                           g_display.width, g_display.height);
+                    if (g_debug) {
+                        printf("ウィンドウサイズ変更: %dx%d\n",
+                               g_display.width, g_display.height);
+                    }
 
                     /* 新しいターミナルサイズを計算 */
                     int char_width = font_get_char_width();
@@ -612,14 +673,27 @@ void display_render_terminal(void)
                 bg_idx = tmp;
             }
 
-            /* 選択範囲は色を反転 */
+            /* 選択範囲の色を決定 */
+            XftColor *fg_color = NULL;
+            XftColor *bg_color = NULL;
+
             if (is_selected) {
-                uint8_t tmp = fg_idx;
-                fg_idx = bg_idx;
-                bg_idx = tmp;
-                /* 背景が黒の場合は白にする */
+                /* 選択範囲は設定色を使用 */
+                fg_color = &g_display.xft_sel_fg;
+                bg_color = &g_display.xft_sel_bg;
+            } else {
+                /* 前景色: fg_idx=7（デフォルト白）の場合はカスタム色を使用 */
+                if (fg_idx == 7) {
+                    fg_color = &g_display.xft_fg;
+                } else {
+                    fg_color = get_color(fg_idx);
+                }
+
+                /* 背景色: bg_idx=0（デフォルト黒）の場合はカスタム色を使用 */
                 if (bg_idx == 0) {
-                    bg_idx = 7;  /* 白 */
+                    bg_color = &g_display.xft_bg;
+                } else {
+                    bg_color = get_color(bg_idx);
                 }
             }
 
@@ -629,8 +703,8 @@ void display_render_terminal(void)
             }
 
             /* 背景色を描画 */
-            if (bg_idx != 0) {  /* 背景が黒でない場合のみ描画 */
-                XftColor *bg_color = get_color(bg_idx);
+            /* 選択範囲、または背景色がデフォルト以外、またはカスタム背景色が設定されている場合に描画 */
+            if (is_selected || bg_idx != 0 || g_color_options.background != NULL) {
                 XSetForeground(g_display.display, g_display.gc, bg_color->pixel);
                 XFillRectangle(g_display.display, g_display.window, g_display.gc,
                               px, py, char_width, char_height);
@@ -644,9 +718,6 @@ void display_render_terminal(void)
                 /* Unicode を UTF-8 に変換 */
                 len = utf8_encode(cell->ch, utf8);
                 utf8[len] = '\0';
-
-                /* 前景色を選択 */
-                XftColor *fg_color = get_color(fg_idx);
 
                 /* 文字を描画 */
                 XftDrawStringUtf8(g_display.xft_draw, fg_color,
@@ -664,15 +735,45 @@ void display_render_terminal(void)
         }
     }
 
+    /* 全幅アンダーラインを描画 */
+    if (g_display_options.show_underline && g_terminal.cursor_y >= 0 && g_terminal.cursor_y < g_terminal.rows) {
+        int uly = g_terminal.cursor_y * char_height + char_height - 1;
+        XSetForeground(g_display.display, g_display.gc, g_display.xft_underline.pixel);
+        XDrawLine(g_display.display, g_display.window, g_display.gc,
+                 0, uly, g_display.width, uly);
+    }
+
     /* カーソルを描画 */
     if (g_terminal.cursor_visible) {
         int cx = g_terminal.cursor_x * char_width;
         int cy = g_terminal.cursor_y * char_height;
 
-        /* カーソルを白い下線として描画（文字セルの下部） */
-        XSetForeground(g_display.display, g_display.gc,
-                      WhitePixel(g_display.display, g_display.screen));
-        XFillRectangle(g_display.display, g_display.window, g_display.gc,
-                      cx, cy + char_height - 2, char_width, 2);  /* 下線カーソル */
+        XSetForeground(g_display.display, g_display.gc, g_display.xft_cursor.pixel);
+
+        switch (g_display_options.cursor_shape) {
+            case TERM_CURSOR_UNDERLINE:
+                /* 短いアンダーライン（文字セルの下部） */
+                XFillRectangle(g_display.display, g_display.window, g_display.gc,
+                              cx, cy + char_height - 2, char_width, 2);
+                break;
+
+            case TERM_CURSOR_BAR:
+                /* 左縦線 */
+                XFillRectangle(g_display.display, g_display.window, g_display.gc,
+                              cx, cy, 2, char_height);
+                break;
+
+            case TERM_CURSOR_HOLLOW_BLOCK:
+                /* 中抜き四角 */
+                XDrawRectangle(g_display.display, g_display.window, g_display.gc,
+                              cx, cy, char_width - 1, char_height - 1);
+                break;
+
+            case TERM_CURSOR_BLOCK:
+                /* 中埋め四角 */
+                XFillRectangle(g_display.display, g_display.window, g_display.gc,
+                              cx, cy, char_width, char_height);
+                break;
+        }
     }
 }

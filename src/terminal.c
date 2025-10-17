@@ -160,7 +160,10 @@ int terminal_init(int rows, int cols)
         g_terminal.cells[i].attr = default_attr;
     }
 
-    printf("ターミナルバッファを初期化しました (%dx%d)\n", cols, rows);
+    extern bool g_debug;
+    if (g_debug) {
+        printf("ターミナルバッファを初期化しました (%dx%d)\n", cols, rows);
+    }
 
     return 0;
 }
@@ -195,7 +198,10 @@ void terminal_cleanup(void)
 
     memset(&g_terminal, 0, sizeof(g_terminal));
 
-    printf("ターミナルバッファをクリーンアップしました\n");
+    extern bool g_debug;
+    if (g_debug) {
+        printf("ターミナルバッファをクリーンアップしました\n");
+    }
 }
 
 /**
@@ -384,7 +390,10 @@ int terminal_resize(int new_rows, int new_cols)
         g_terminal.cursor_y = new_rows - 1;
     }
 
-    printf("ターミナルバッファをリサイズしました (%dx%d)\n", new_cols, new_rows);
+    extern bool g_debug;
+    if (g_debug) {
+        printf("ターミナルバッファをリサイズしました (%dx%d)\n", new_cols, new_rows);
+    }
 
     return 0;
 }

@@ -39,6 +39,8 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 
 # ヘッダ依存関係
 $(OBJECTS): $(INCDIR)/koteiterm.h $(wildcard $(SRCDIR)/*.h)
+$(OBJDIR)/display.o: $(SRCDIR)/color.h
+$(OBJDIR)/color.o: $(SRCDIR)/color.h
 
 # クリーンアップ
 .PHONY: clean

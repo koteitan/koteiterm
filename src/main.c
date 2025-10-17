@@ -19,7 +19,24 @@ TerminalState g_term = {
 };
 
 /* デバッグフラグ */
+bool g_debug = false;
 bool g_debug_key = false;
+
+/* 色オプション設定（デフォルトはNULL = システムデフォルト） */
+ColorOptions g_color_options = {
+    .foreground = NULL,
+    .background = NULL,
+    .cursor = NULL,
+    .sel_bg = NULL,
+    .sel_fg = NULL,
+    .underline = NULL
+};
+
+/* 表示オプション設定 */
+DisplayOptions g_display_options = {
+    .cursor_shape = TERM_CURSOR_BAR,
+    .show_underline = false
+};
 
 /* シグナルハンドラ */
 static void signal_handler(int sig)
@@ -37,8 +54,9 @@ static int init(void)
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    printf("koteiterm v%s を初期化しています...\n", KOTEITERM_VERSION);
-    printf("ターミナルサイズ: %dx%d\n", g_term.cols, g_term.rows);
+    if (g_debug) {
+        printf("koteiterm v%s を初期化しています...\n", KOTEITERM_VERSION);
+    }
 
     /* ディスプレイの初期化 */
     if (display_init(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT) != 0) {
@@ -52,6 +70,28 @@ static int init(void)
         fprintf(stderr, "フォントの初期化に失敗しました\n");
         display_cleanup();
         return -1;
+    }
+
+    /* ウィンドウサイズからターミナルサイズを計算 */
+    int char_width = font_get_char_width();
+    int char_height = font_get_char_height();
+    int actual_cols = g_display.width / char_width;
+    int actual_rows = g_display.height / char_height;
+
+    if (actual_cols <= 0 || actual_rows <= 0) {
+        fprintf(stderr, "ターミナルサイズの計算に失敗しました\n");
+        font_cleanup(g_display.display);
+        display_cleanup();
+        return -1;
+    }
+
+    /* グローバル状態を更新 */
+    g_term.rows = actual_rows;
+    g_term.cols = actual_cols;
+
+    if (g_debug) {
+        printf("実際のターミナルサイズ: %dx%d (文字サイズ: %dx%d)\n",
+               g_term.cols, g_term.rows, char_width, char_height);
     }
 
     /* ターミナルバッファの初期化 */
@@ -79,7 +119,9 @@ void cleanup(void)
 {
     extern DisplayState g_display;
 
-    printf("koteiterm をクリーンアップしています...\n");
+    if (g_debug) {
+        printf("koteiterm をクリーンアップしています...\n");
+    }
 
     /* PTYのクリーンアップ */
     pty_cleanup();
@@ -101,7 +143,9 @@ static void main_loop(void)
 {
     char buffer[4096];
 
-    printf("メインループを開始します（ウィンドウを閉じるかCtrl+Cで終了）\n");
+    if (g_debug) {
+        printf("メインループを開始します（ウィンドウを閉じるかCtrl+Cで終了）\n");
+    }
 
     /* イベントループ */
     while (g_term.running) {
@@ -121,7 +165,9 @@ static void main_loop(void)
 
         /* 子プロセスの状態をチェック */
         if (!pty_is_child_running()) {
-            printf("シェルが終了しました\n");
+            if (g_debug) {
+                printf("シェルが終了しました\n");
+            }
             g_term.running = false;
             break;
         }
@@ -143,7 +189,31 @@ static void print_usage(const char *prog_name)
     printf("\nオプション:\n");
     printf("  -h, --help       このヘルプメッセージを表示\n");
     printf("  -v, --version    バージョン情報を表示\n");
+    printf("      --debug      デバッグ情報を表示\n");
     printf("      --debug-key  キー入力のデバッグ情報を表示\n");
+    printf("\n");
+    printf("色設定:\n");
+    printf("  -fg <color>      前景色を指定\n");
+    printf("  -bg <color>      背景色を指定\n");
+    printf("  -cr <color>      カーソル色を指定\n");
+    printf("  -selbg <color>   選択背景色を指定\n");
+    printf("  -selfg <color>   選択前景色を指定\n");
+    printf("  -ul <color>      アンダーライン色を指定\n");
+    printf("\n");
+    printf("色の指定方法:\n");
+    printf("  - 色名: red, blue, white, black など\n");
+    printf("  - #RGB: #f00, #0f0, #00f\n");
+    printf("  - #RRGGBB: #ff0000, #00ff00, #0000ff\n");
+    printf("  - rgb:RR/GG/BB: rgb:ff/00/00\n");
+    printf("  - rgb:RRRR/GGGG/BBBB: rgb:ffff/0000/0000\n");
+    printf("\n");
+    printf("表示設定:\n");
+    printf("  --cursor <shape> カーソル形状を指定\n");
+    printf("                   bar: 左縦線（デフォルト）\n");
+    printf("                   underline: 短いアンダーライン\n");
+    printf("                   hollow: 中抜き四角\n");
+    printf("                   block: 中埋め四角\n");
+    printf("  --underline      行全体にアンダーラインを表示\n");
     printf("\n");
     printf("キーボード操作:\n");
     printf("  Shift+PageUp       上にスクロール（1画面分）\n");
@@ -182,9 +252,67 @@ int main(int argc, char *argv[])
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
             printf("koteiterm version %s\n", KOTEITERM_VERSION);
             return 0;
+        } else if (strcmp(argv[i], "--debug") == 0) {
+            g_debug = true;
         } else if (strcmp(argv[i], "--debug-key") == 0) {
             g_debug_key = true;
-            printf("キー入力デバッグモードを有効にしました\n");
+        } else if (strcmp(argv[i], "-fg") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "エラー: -fg オプションには色の指定が必要です\n");
+                return 1;
+            }
+            g_color_options.foreground = argv[++i];
+        } else if (strcmp(argv[i], "-bg") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "エラー: -bg オプションには色の指定が必要です\n");
+                return 1;
+            }
+            g_color_options.background = argv[++i];
+        } else if (strcmp(argv[i], "-cr") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "エラー: -cr オプションには色の指定が必要です\n");
+                return 1;
+            }
+            g_color_options.cursor = argv[++i];
+        } else if (strcmp(argv[i], "-selbg") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "エラー: -selbg オプションには色の指定が必要です\n");
+                return 1;
+            }
+            g_color_options.sel_bg = argv[++i];
+        } else if (strcmp(argv[i], "-selfg") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "エラー: -selfg オプションには色の指定が必要です\n");
+                return 1;
+            }
+            g_color_options.sel_fg = argv[++i];
+        } else if (strcmp(argv[i], "-ul") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "エラー: -ul オプションには色の指定が必要です\n");
+                return 1;
+            }
+            g_color_options.underline = argv[++i];
+        } else if (strcmp(argv[i], "--cursor") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "エラー: --cursor オプションには形状の指定が必要です\n");
+                return 1;
+            }
+            const char *shape = argv[++i];
+            if (strcmp(shape, "underline") == 0) {
+                g_display_options.cursor_shape = TERM_CURSOR_UNDERLINE;
+            } else if (strcmp(shape, "bar") == 0) {
+                g_display_options.cursor_shape = TERM_CURSOR_BAR;
+            } else if (strcmp(shape, "hollow") == 0) {
+                g_display_options.cursor_shape = TERM_CURSOR_HOLLOW_BLOCK;
+            } else if (strcmp(shape, "block") == 0) {
+                g_display_options.cursor_shape = TERM_CURSOR_BLOCK;
+            } else {
+                fprintf(stderr, "エラー: 不明なカーソル形状: %s\n", shape);
+                fprintf(stderr, "使用可能な形状: underline, bar, hollow, block\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "--underline") == 0) {
+            g_display_options.show_underline = true;
         } else {
             fprintf(stderr, "不明なオプション: %s\n", argv[i]);
             print_usage(argv[0]);
@@ -204,6 +332,8 @@ int main(int argc, char *argv[])
     /* クリーンアップ */
     cleanup();
 
-    printf("koteiterm を終了しました\n");
+    if (g_debug) {
+        printf("koteiterm を終了しました\n");
+    }
     return ret;
 }

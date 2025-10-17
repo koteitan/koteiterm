@@ -71,6 +71,49 @@ make
 ./koteiterm -fg cyan -bg "#1a1a1a" -cr orange -selbg "#404040" -selfg yellow
 ```
 
+#### カーソルカスタマイズ
+
+**カーソル形状:**
+
+```bash
+./koteiterm --cursor bar        # 左縦線（デフォルト）
+./koteiterm --cursor underline  # 短いアンダーライン
+./koteiterm --cursor hollow     # 中抜き四角
+./koteiterm --cursor block      # 中埋め四角
+```
+
+**画像カーソル（PNG/GIF対応）:**
+
+カーソルとして画像ファイルを使用できます：
+
+```bash
+# 基本的な使い方
+./koteiterm --cursor "path/to/image.png"
+
+# オフセット指定（x:y、ピクセル単位）
+./koteiterm --cursor "sushi.png:2:4"
+
+# オフセットとスケール指定（0.0-1.0）
+./koteiterm --cursor "sushi.png:0:0:0.5"
+```
+
+**パラメータ:**
+- **x, y**: カーソル画像の位置オフセット（ピクセル、デフォルト: 0, 0）
+- **scale**: 画像サイズのスケール（0.0〜1.0、デフォルト: 1.0）
+
+**使用例:**
+
+```bash
+# 寿司アイコンをカーソルとして使用
+./koteiterm --cursor "sushi.png"
+
+# アニメーションGIFをカーソルとして使用
+./koteiterm --cursor "np-001.gif"
+
+# スケールを50%に縮小
+./koteiterm --cursor "sushi.png:0:0:0.5"
+```
+
 ## 操作方法
 
 ### キーボード操作

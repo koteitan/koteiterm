@@ -6,8 +6,8 @@ CFLAGS = -Wall -Wextra -Werror -std=gnu11 -g -O2
 CFLAGS += -Iinclude
 
 # ライブラリ依存
-LDFLAGS = -lX11
-# 将来追加予定: -lXft -lutil -lfontconfig
+LDFLAGS = -lX11 -lutil
+# 将来追加予定: -lXft -lfontconfig
 
 # ディレクトリ
 SRCDIR = src

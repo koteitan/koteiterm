@@ -41,6 +41,13 @@ static int init(void)
         return -1;
     }
 
+    /* PTYの初期化とシェル起動 */
+    if (pty_init(g_term.rows, g_term.cols) != 0) {
+        fprintf(stderr, "PTYの初期化に失敗しました\n");
+        display_cleanup();
+        return -1;
+    }
+
     return 0;
 }
 
@@ -49,15 +56,20 @@ void cleanup(void)
 {
     printf("koteiterm をクリーンアップしています...\n");
 
+    /* PTYのクリーンアップ */
+    pty_cleanup();
+
     /* ディスプレイのクリーンアップ */
     display_cleanup();
 
-    /* 将来: pty_cleanup(), terminal_cleanup() */
+    /* 将来: terminal_cleanup() */
 }
 
 /* メインループ */
 static void main_loop(void)
 {
+    char buffer[4096];
+
     printf("メインループを開始します（ウィンドウを閉じるかCtrl+Cで終了）\n");
 
     /* イベントループ */
@@ -65,6 +77,22 @@ static void main_loop(void)
         /* X11イベントを処理 */
         if (!display_handle_events()) {
             /* ウィンドウが閉じられた */
+            g_term.running = false;
+            break;
+        }
+
+        /* PTYからデータを読み取る */
+        ssize_t n = pty_read(buffer, sizeof(buffer) - 1);
+        if (n > 0) {
+            /* デバッグ: 標準出力に表示 */
+            buffer[n] = '\0';
+            printf("%s", buffer);
+            fflush(stdout);
+        }
+
+        /* 子プロセスの状態をチェック */
+        if (!pty_is_child_running()) {
+            printf("シェルが終了しました\n");
             g_term.running = false;
             break;
         }

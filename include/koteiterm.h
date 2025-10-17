@@ -53,9 +53,13 @@ bool display_handle_events(void);
 void display_clear(void);
 void display_flush(void);
 
-/* pty.c（将来実装） */
-// int pty_init(void);
-// void pty_cleanup(void);
+/* pty.c */
+int pty_init(int rows, int cols);
+void pty_cleanup(void);
+ssize_t pty_read(char *buffer, size_t size);
+ssize_t pty_write(const char *data, size_t size);
+int pty_resize(int rows, int cols);
+bool pty_is_child_running(void);
 
 /* terminal.c（将来実装） */
 // int terminal_init(int rows, int cols);

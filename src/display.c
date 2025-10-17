@@ -218,6 +218,31 @@ int display_init(int width, int height)
         color_initialized[i] = true;
     }
 
+    /* XIM (Input Method) を初期化 */
+    g_display.xim = XOpenIM(g_display.display, NULL, NULL, NULL);
+    if (!g_display.xim) {
+        fprintf(stderr, "警告: XIM (Input Method) を開けませんでした\n");
+        fprintf(stderr, "日本語入力が利用できない可能性があります\n");
+        g_display.xic = NULL;
+    } else {
+        /* XIC (Input Context) を作成 */
+        g_display.xic = XCreateIC(g_display.xim,
+                                  XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
+                                  XNClientWindow, g_display.window,
+                                  XNFocusWindow, g_display.window,
+                                  NULL);
+        if (!g_display.xic) {
+            fprintf(stderr, "警告: XIC (Input Context) を作成できませんでした\n");
+            fprintf(stderr, "日本語入力が利用できない可能性があります\n");
+            XCloseIM(g_display.xim);
+            g_display.xim = NULL;
+        } else {
+            /* フォーカスを設定 */
+            XSetICFocus(g_display.xic);
+            printf("XIM/XICを初期化しました（日本語入力が利用可能）\n");
+        }
+    }
+
     printf("X11ディスプレイを初期化しました (%dx%d)\n", width, height);
 
     return 0;
@@ -230,6 +255,16 @@ void display_cleanup(void)
 {
     if (!g_display.display) {
         return;
+    }
+
+    /* XIC/XIMをクリーンアップ */
+    if (g_display.xic) {
+        XDestroyIC(g_display.xic);
+        g_display.xic = NULL;
+    }
+    if (g_display.xim) {
+        XCloseIM(g_display.xim);
+        g_display.xim = NULL;
     }
 
     /* Xft リソースをクリーンアップ */

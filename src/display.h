@@ -18,6 +18,8 @@ typedef struct {
     XftDraw *xft_draw;       /* Xft描画コンテキスト */
     XftColor xft_fg;         /* 前景色 */
     XftColor xft_bg;         /* 背景色 */
+    XIM xim;                 /* Input Method */
+    XIC xic;                 /* Input Context */
 } DisplayState;
 
 /* グローバルディスプレイ状態 */

@@ -4,6 +4,7 @@
  */
 
 #include "input.h"
+#include "display.h"
 #include "koteiterm.h"
 #include "terminal.h"
 #include <X11/Xlib.h>
@@ -20,15 +21,39 @@ bool input_handle_key(XKeyEvent *event)
     char buf[32];
     KeySym keysym;
     int len;
+    Status status;
 
-    /* キーシンボルと文字列を取得 */
-    len = XLookupString(event, buf, sizeof(buf) - 1, &keysym, NULL);
+    /* XICがあればXmbLookupStringを使用（IME対応） */
+    extern DisplayState g_display;
+    if (g_display.xic) {
+        len = XmbLookupString(g_display.xic, event, buf, sizeof(buf) - 1, &keysym, &status);
 
-    if (len > 0) {
-        /* 通常の文字入力 */
-        buf[len] = '\0';
-        pty_write(buf, len);
-        return true;
+        if (status == XBufferOverflow) {
+            /* バッファが小さすぎる場合（通常は発生しない） */
+            fprintf(stderr, "警告: IME入力バッファオーバーフロー\n");
+            return false;
+        }
+
+        if (status == XLookupChars || status == XLookupBoth) {
+            /* 文字が入力された */
+            if (len > 0) {
+                buf[len] = '\0';
+                pty_write(buf, len);
+                return true;
+            }
+        }
+
+        /* XLookupKeySym の場合は下の特殊キー処理へ */
+    } else {
+        /* XICがない場合は従来のXLookupStringを使用 */
+        len = XLookupString(event, buf, sizeof(buf) - 1, &keysym, NULL);
+
+        if (len > 0) {
+            /* 通常の文字入力 */
+            buf[len] = '\0';
+            pty_write(buf, len);
+            return true;
+        }
     }
 
     /* 特殊キーの処理 */

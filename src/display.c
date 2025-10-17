@@ -7,6 +7,7 @@
 #include "font.h"
 #include "terminal.h"
 #include "input.h"
+#include "pty.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -203,6 +204,28 @@ bool display_handle_events(void)
                     g_display.height = event.xconfigure.height;
                     printf("ウィンドウサイズ変更: %dx%d\n",
                            g_display.width, g_display.height);
+
+                    /* 新しいターミナルサイズを計算 */
+                    int char_width = font_get_char_width();
+                    int char_height = font_get_char_height();
+
+                    if (char_width > 0 && char_height > 0) {
+                        int new_cols = g_display.width / char_width;
+                        int new_rows = g_display.height / char_height;
+
+                        if (new_cols > 0 && new_rows > 0) {
+                            /* ターミナルバッファをリサイズ */
+                            if (terminal_resize(new_rows, new_cols) == 0) {
+                                /* PTYをリサイズ */
+                                pty_resize(new_rows, new_cols);
+
+                                /* 再描画 */
+                                display_clear();
+                                display_render_terminal();
+                                display_flush();
+                            }
+                        }
+                    }
                 }
                 break;
 

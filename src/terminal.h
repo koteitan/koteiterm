@@ -116,4 +116,12 @@ void terminal_carriage_return(void);
  */
 void terminal_scroll_up(void);
 
+/**
+ * ターミナルバッファをリサイズする
+ * @param new_rows 新しい行数
+ * @param new_cols 新しい列数
+ * @return 成功時0、失敗時-1
+ */
+int terminal_resize(int new_rows, int new_cols);
+
 #endif /* TERMINAL_H */

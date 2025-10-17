@@ -164,6 +164,68 @@ void terminal_scroll_up(void)
 }
 
 /**
+ * ターミナルバッファをリサイズする
+ */
+int terminal_resize(int new_rows, int new_cols)
+{
+    if (new_rows <= 0 || new_cols <= 0) {
+        fprintf(stderr, "エラー: 無効なターミナルサイズ (%dx%d)\n", new_cols, new_rows);
+        return -1;
+    }
+
+    /* 新しいバッファを確保 */
+    Cell *new_cells = calloc(new_rows * new_cols, sizeof(Cell));
+    if (!new_cells) {
+        fprintf(stderr, "エラー: リサイズ用バッファのメモリ確保に失敗しました\n");
+        return -1;
+    }
+
+    /* デフォルト属性で初期化 */
+    CellAttr default_attr = {
+        .fg_color = 7,  /* 白 */
+        .bg_color = 0,  /* 黒 */
+        .flags = 0
+    };
+
+    for (int i = 0; i < new_rows * new_cols; i++) {
+        new_cells[i].ch = ' ';
+        new_cells[i].attr = default_attr;
+    }
+
+    /* 既存の内容をコピー */
+    int copy_rows = (new_rows < g_terminal.rows) ? new_rows : g_terminal.rows;
+    int copy_cols = (new_cols < g_terminal.cols) ? new_cols : g_terminal.cols;
+
+    for (int y = 0; y < copy_rows; y++) {
+        for (int x = 0; x < copy_cols; x++) {
+            int old_idx = y * g_terminal.cols + x;
+            int new_idx = y * new_cols + x;
+            new_cells[new_idx] = g_terminal.cells[old_idx];
+        }
+    }
+
+    /* 古いバッファを解放 */
+    free(g_terminal.cells);
+
+    /* 新しいバッファに切り替え */
+    g_terminal.cells = new_cells;
+    g_terminal.rows = new_rows;
+    g_terminal.cols = new_cols;
+
+    /* カーソル位置を調整 */
+    if (g_terminal.cursor_x >= new_cols) {
+        g_terminal.cursor_x = new_cols - 1;
+    }
+    if (g_terminal.cursor_y >= new_rows) {
+        g_terminal.cursor_y = new_rows - 1;
+    }
+
+    printf("ターミナルバッファをリサイズしました (%dx%d)\n", new_cols, new_rows);
+
+    return 0;
+}
+
+/**
  * キャリッジリターン処理
  */
 void terminal_carriage_return(void)

@@ -4,6 +4,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xft/Xft.h>
+#include <Imlib2.h>
 #include <stdbool.h>
 
 /* ディスプレイ状態 */
@@ -24,6 +25,11 @@ typedef struct {
     XftColor xft_underline;  /* アンダーライン色 */
     XIM xim;                 /* Input Method */
     XIC xic;                 /* Input Context */
+    Imlib_Image cursor_image;  /* カーソル画像（Imlib2） */
+    Pixmap cursor_pixmap;      /* カーソル画像のPixmap */
+    Pixmap cursor_mask;        /* カーソル画像のマスク */
+    int cursor_image_width;    /* カーソル画像の幅 */
+    int cursor_image_height;   /* カーソル画像の高さ */
 } DisplayState;
 
 /* グローバルディスプレイ状態 */

@@ -296,6 +296,65 @@ int display_init(int width, int height)
         printf("X11ディスプレイを初期化しました (%dx%d)\n", width, height);
     }
 
+    /* 画像カーソルのロード */
+    if (g_display_options.cursor_shape == TERM_CURSOR_IMAGE && g_display_options.cursor_image_path) {
+        /* Imlib2コンテキストを設定 */
+        imlib_context_set_display(g_display.display);
+        imlib_context_set_visual(visual);
+        imlib_context_set_colormap(colormap);
+        imlib_context_set_drawable(g_display.window);
+
+        /* 画像をロード */
+        Imlib_Image image = imlib_load_image(g_display_options.cursor_image_path);
+        if (!image) {
+            fprintf(stderr, "警告: カーソル画像の読み込みに失敗しました: %s\n", g_display_options.cursor_image_path);
+            /* デフォルトカーソルにフォールバック */
+            g_display_options.cursor_shape = TERM_CURSOR_BAR;
+        } else {
+            imlib_context_set_image(image);
+
+            int orig_width = imlib_image_get_width();
+            int orig_height = imlib_image_get_height();
+
+            /* スケーリング計算 */
+            int scaled_width = (int)(orig_width * g_display_options.cursor_scale);
+            int scaled_height = (int)(orig_height * g_display_options.cursor_scale);
+
+            if (scaled_width <= 0) scaled_width = 1;
+            if (scaled_height <= 0) scaled_height = 1;
+
+            /* スケーリング済み画像を作成 */
+            Imlib_Image scaled_image = imlib_create_cropped_scaled_image(
+                0, 0, orig_width, orig_height, scaled_width, scaled_height);
+
+            /* 元の画像を解放 */
+            imlib_free_image();
+
+            if (!scaled_image) {
+                fprintf(stderr, "警告: カーソル画像のスケーリングに失敗しました\n");
+                g_display_options.cursor_shape = TERM_CURSOR_BAR;
+            } else {
+                imlib_context_set_image(scaled_image);
+
+                /* Pixmap と Mask を作成 */
+                imlib_render_pixmaps_for_whole_image(&g_display.cursor_pixmap, &g_display.cursor_mask);
+
+                /* サイズを保存 */
+                g_display.cursor_image_width = scaled_width;
+                g_display.cursor_image_height = scaled_height;
+
+                /* Imlib_Imageを保存（アニメーション用に後で使う可能性がある） */
+                g_display.cursor_image = scaled_image;
+
+                if (g_debug) {
+                    printf("カーソル画像を読み込みました: %s (元: %dx%d, スケール: %.2f, 結果: %dx%d)\n",
+                           g_display_options.cursor_image_path, orig_width, orig_height,
+                           g_display_options.cursor_scale, scaled_width, scaled_height);
+                }
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -338,6 +397,23 @@ void display_cleanup(void)
             XftColorFree(g_display.display, visual, colormap, &xft_color_cache[i]);
             color_initialized[i] = false;
         }
+    }
+
+    /* Imlib2画像リソースを解放 */
+    if (g_display.cursor_image) {
+        imlib_context_set_image(g_display.cursor_image);
+        imlib_free_image();
+        g_display.cursor_image = NULL;
+    }
+
+    /* Pixmapを解放 */
+    if (g_display.cursor_pixmap) {
+        XFreePixmap(g_display.display, g_display.cursor_pixmap);
+        g_display.cursor_pixmap = 0;
+    }
+    if (g_display.cursor_mask) {
+        XFreePixmap(g_display.display, g_display.cursor_mask);
+        g_display.cursor_mask = 0;
     }
 
     if (g_display.gc) {
@@ -773,6 +849,31 @@ void display_render_terminal(void)
                 /* 中埋め四角 */
                 XFillRectangle(g_display.display, g_display.window, g_display.gc,
                               cx, cy, char_width, char_height);
+                break;
+
+            case TERM_CURSOR_IMAGE:
+                /* 画像カーソル */
+                if (g_display.cursor_pixmap) {
+                    /* 画像描画位置を計算（左下基準でオフセット適用） */
+                    int img_x = cx + g_display_options.cursor_offset_x;
+                    int img_y = cy + char_height - g_display.cursor_image_height + g_display_options.cursor_offset_y;
+
+                    if (g_display.cursor_mask) {
+                        /* マスクを使って透過描画 */
+                        XSetClipMask(g_display.display, g_display.gc, g_display.cursor_mask);
+                        XSetClipOrigin(g_display.display, g_display.gc, img_x, img_y);
+                    }
+
+                    /* Pixmapをコピー */
+                    XCopyArea(g_display.display, g_display.cursor_pixmap, g_display.window,
+                              g_display.gc, 0, 0, g_display.cursor_image_width,
+                              g_display.cursor_image_height, img_x, img_y);
+
+                    if (g_display.cursor_mask) {
+                        /* クリップマスクをリセット */
+                        XSetClipMask(g_display.display, g_display.gc, None);
+                    }
+                }
                 break;
         }
     }

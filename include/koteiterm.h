@@ -34,7 +34,8 @@ typedef enum {
     TERM_CURSOR_UNDERLINE,    /* 短いアンダーライン（デフォルト） */
     TERM_CURSOR_BAR,          /* 左縦線 */
     TERM_CURSOR_HOLLOW_BLOCK, /* 中抜き四角 */
-    TERM_CURSOR_BLOCK         /* 中埋め四角 */
+    TERM_CURSOR_BLOCK,        /* 中埋め四角 */
+    TERM_CURSOR_IMAGE         /* 画像ファイル */
 } TermCursorShape;
 
 /* 色オプション設定 */
@@ -51,6 +52,10 @@ typedef struct {
 typedef struct {
     TermCursorShape cursor_shape;  /* カーソル形状 */
     bool show_underline;           /* 全幅アンダーラインを表示 */
+    const char *cursor_image_path; /* カーソル画像ファイルパス */
+    int cursor_offset_x;           /* カーソル画像のXオフセット（ピクセル） */
+    int cursor_offset_y;           /* カーソル画像のYオフセット（ピクセル） */
+    double cursor_scale;           /* カーソル画像のスケール（0.0-1.0） */
 } DisplayOptions;
 
 /* ターミナル状態 */

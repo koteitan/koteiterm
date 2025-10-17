@@ -35,7 +35,11 @@ ColorOptions g_color_options = {
 /* 表示オプション設定 */
 DisplayOptions g_display_options = {
     .cursor_shape = TERM_CURSOR_BAR,
-    .show_underline = false
+    .show_underline = false,
+    .cursor_image_path = NULL,
+    .cursor_offset_x = 0,
+    .cursor_offset_y = 0,
+    .cursor_scale = 1.0
 };
 
 /* シグナルハンドラ */
@@ -213,6 +217,9 @@ static void print_usage(const char *prog_name)
     printf("                   underline: 短いアンダーライン\n");
     printf("                   hollow: 中抜き四角\n");
     printf("                   block: 中埋め四角\n");
+    printf("                   画像: \"path/to/file.png[:x:y[:scale]]\"\n");
+    printf("                         x,y: オフセット（ピクセル、デフォルト0,0）\n");
+    printf("                         scale: スケール（0.0-1.0、デフォルト1.0）\n");
     printf("  --underline      行全体にアンダーラインを表示\n");
     printf("\n");
     printf("キーボード操作:\n");
@@ -306,9 +313,45 @@ int main(int argc, char *argv[])
                 g_display_options.cursor_shape = TERM_CURSOR_HOLLOW_BLOCK;
             } else if (strcmp(shape, "block") == 0) {
                 g_display_options.cursor_shape = TERM_CURSOR_BLOCK;
+            } else if (strchr(shape, '.') != NULL) {
+                /* 画像ファイルパス（拡張子を含む） */
+                g_display_options.cursor_shape = TERM_CURSOR_IMAGE;
+
+                /* パス:x:y:scaleの形式をパース */
+                char *path_copy = strdup(shape);
+                char *token = strtok(path_copy, ":");
+
+                if (token) {
+                    g_display_options.cursor_image_path = strdup(token);
+
+                    /* オフセットXをパース */
+                    token = strtok(NULL, ":");
+                    if (token) {
+                        g_display_options.cursor_offset_x = atoi(token);
+
+                        /* オフセットYをパース */
+                        token = strtok(NULL, ":");
+                        if (token) {
+                            g_display_options.cursor_offset_y = atoi(token);
+
+                            /* スケールをパース */
+                            token = strtok(NULL, ":");
+                            if (token) {
+                                g_display_options.cursor_scale = atof(token);
+                                /* スケールを0.0-1.0にクランプ */
+                                if (g_display_options.cursor_scale < 0.0) {
+                                    g_display_options.cursor_scale = 0.0;
+                                } else if (g_display_options.cursor_scale > 1.0) {
+                                    g_display_options.cursor_scale = 1.0;
+                                }
+                            }
+                        }
+                    }
+                }
+                free(path_copy);
             } else {
                 fprintf(stderr, "エラー: 不明なカーソル形状: %s\n", shape);
-                fprintf(stderr, "使用可能な形状: underline, bar, hollow, block\n");
+                fprintf(stderr, "使用可能な形状: underline, bar, hollow, block, または画像ファイルパス\n");
                 return 1;
             }
         } else if (strcmp(argv[i], "--underline") == 0) {

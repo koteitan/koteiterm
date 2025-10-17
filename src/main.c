@@ -18,6 +18,9 @@ TerminalState g_term = {
     .running = true
 };
 
+/* デバッグフラグ */
+bool g_debug_key = false;
+
 /* シグナルハンドラ */
 static void signal_handler(int sig)
 {
@@ -138,8 +141,9 @@ static void print_usage(const char *prog_name)
 {
     printf("使い方: %s [オプション]\n", prog_name);
     printf("\nオプション:\n");
-    printf("  -h, --help     このヘルプメッセージを表示\n");
-    printf("  -v, --version  バージョン情報を表示\n");
+    printf("  -h, --help       このヘルプメッセージを表示\n");
+    printf("  -v, --version    バージョン情報を表示\n");
+    printf("      --debug-key  キー入力のデバッグ情報を表示\n");
     printf("\n");
     printf("キーボード操作:\n");
     printf("  Shift+PageUp       上にスクロール（1画面分）\n");
@@ -178,6 +182,9 @@ int main(int argc, char *argv[])
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
             printf("koteiterm version %s\n", KOTEITERM_VERSION);
             return 0;
+        } else if (strcmp(argv[i], "--debug-key") == 0) {
+            g_debug_key = true;
+            printf("キー入力デバッグモードを有効にしました\n");
         } else {
             fprintf(stderr, "不明なオプション: %s\n", argv[i]);
             print_usage(argv[0]);

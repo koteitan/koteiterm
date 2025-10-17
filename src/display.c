@@ -318,8 +318,12 @@ bool display_handle_events(void)
         XNextEvent(g_display.display, &event);
 
         /* IMEにイベントを渡す */
-        if (XFilterEvent(&event, None)) {
+        if (XFilterEvent(&event, g_display.window)) {
             /* IMEがイベントを処理した場合はスキップ */
+            extern bool g_debug_key;
+            if (g_debug_key && event.type == KeyPress) {
+                fprintf(stderr, "DEBUG: XFilterEvent がキーイベントをフィルタしました\n");
+            }
             continue;
         }
 

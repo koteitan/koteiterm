@@ -41,6 +41,9 @@ typedef struct {
 /* グローバル状態 */
 extern TerminalState g_term;
 
+/* デバッグフラグ */
+extern bool g_debug_key;
+
 /* 関数プロトタイプ（後で各モジュールで実装） */
 
 /* main.c */

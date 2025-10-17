@@ -25,8 +25,23 @@ bool input_handle_key(XKeyEvent *event)
 
     /* XICがあればXmbLookupStringを使用（IME対応） */
     extern DisplayState g_display;
+    extern bool g_debug_key;
+
     if (g_display.xic) {
+        /* Alt+` (IME切り替えキー) を無視 */
+        if ((event->state & Mod1Mask) && event->keycode == 49) {
+            if (g_debug_key) {
+                fprintf(stderr, "DEBUG: Alt+` を検出、IME切り替えとして処理\n");
+            }
+            return false;
+        }
+
         len = XmbLookupString(g_display.xic, event, buf, sizeof(buf) - 1, &keysym, &status);
+
+        if (g_debug_key) {
+            fprintf(stderr, "DEBUG: XmbLookupString - status=%d, len=%d, keysym=0x%lx\n",
+                    status, len, (unsigned long)keysym);
+        }
 
         if (status == XBufferOverflow) {
             /* バッファが小さすぎる場合（通常は発生しない） */
@@ -38,6 +53,9 @@ bool input_handle_key(XKeyEvent *event)
             /* 文字が入力された */
             if (len > 0) {
                 buf[len] = '\0';
+                if (g_debug_key) {
+                    fprintf(stderr, "DEBUG: IME入力: %d bytes\n", len);
+                }
                 pty_write(buf, len);
                 return true;
             }

@@ -1,0 +1,23 @@
+# ビルド生成物
+koteiterm
+obj/
+*.o
+*.a
+*.so
+
+# デバッグファイル
+*.dSYM/
+core
+vgcore.*
+
+# エディタ一時ファイル
+*~
+.*.swp
+.*.swo
+*.bak
+.vscode/
+.idea/
+
+# OS生成ファイル
+.DS_Store
+Thumbs.db

@@ -1,132 +1,132 @@
-# koteiterm - Linux Terminal Emulator Specification
+# koteiterm - Linuxターミナルエミュレータ仕様書
 
-## Overview
-A modern terminal emulator for Linux (WSL) environments, similar to xterm, providing a graphical interface for shell interaction.
+## 概要
+xtermに似た、Linux（WSL）環境向けのモダンなターミナルエミュレータ。シェルとの対話的操作のためのグラフィカルインターフェースを提供する。
 
-## Target Environment
-- **Platform**: Linux (WSL2)
-- **Display Server**: X11 or Wayland
-- **Programming Language**: C/C++ (recommended for performance and compatibility)
-- **Architecture**: Native Linux application
+## 対象環境
+- **プラットフォーム**: Linux (WSL2)
+- **ディスプレイサーバ**: X11 または Wayland
+- **プログラミング言語**: C/C++（パフォーマンスと互換性のため推奨）
+- **アーキテクチャ**: ネイティブLinuxアプリケーション
 
-## Core Features
+## コア機能
 
-### 1. Terminal Emulation
-- **VT100/VT102 compatibility**: Support basic ANSI escape sequences
-- **xterm-256color support**: 256-color palette
-- **UTF-8 encoding**: Full Unicode support for international characters
-- **Terminal size**: Configurable rows and columns (default: 80x24)
-- **Scrollback buffer**: Configurable history (default: 1000 lines)
+### 1. ターミナルエミュレーション
+- **VT100/VT102互換性**: 基本的なANSIエスケープシーケンスのサポート
+- **xterm-256colorサポート**: 256色パレット
+- **UTF-8エンコーディング**: 国際文字の完全なUnicodeサポート
+- **ターミナルサイズ**: 行数と列数の設定可能（デフォルト: 80x24）
+- **スクロールバックバッファ**: 履歴の設定可能（デフォルト: 1000行）
 
-### 2. Shell Integration
-- **PTY (Pseudo-Terminal) support**: Fork/exec shell process with PTY
-- **Default shell**: Read from $SHELL environment variable (fallback: /bin/bash)
-- **Signal handling**: Proper SIGCHLD, SIGWINCH handling
-- **Window resize**: Communicate terminal size changes to shell
+### 2. シェル統合
+- **PTY（疑似端末）サポート**: PTYを使用したシェルプロセスのfork/exec
+- **デフォルトシェル**: $SHELL環境変数から読み取り（フォールバック: /bin/bash）
+- **シグナル処理**: SIGCHLD、SIGWINCHの適切な処理
+- **ウィンドウリサイズ**: ターミナルサイズの変更をシェルに通知
 
-### 3. User Interface
-- **Window manager**: Use X11/Wayland for window creation
-- **Font rendering**: Monospace font with configurable size
-- **Text rendering**:
-  - Anti-aliased text rendering
-  - Proper character cell alignment
-  - Support for bold, italic, underline
-- **Color support**:
-  - 16 basic ANSI colors
-  - 256-color palette
-  - True color (24-bit RGB) support
-- **Cursor styles**: Block, underline, beam (configurable)
-- **Cursor blinking**: Configurable on/off
+### 3. ユーザーインターフェース
+- **ウィンドウマネージャ**: X11/Waylandを使用したウィンドウ作成
+- **フォントレンダリング**: サイズ設定可能な等幅フォント
+- **テキストレンダリング**:
+  - アンチエイリアスされたテキスト描画
+  - 適切な文字セルアラインメント
+  - 太字、斜体、下線のサポート
+- **色サポート**:
+  - 16基本ANSI色
+  - 256色パレット
+  - トゥルーカラー（24ビットRGB）サポート
+- **カーソルスタイル**: ブロック、アンダーライン、ビーム（設定可能）
+- **カーソル点滅**: on/off設定可能
 
-### 4. Input Handling
-- **Keyboard input**:
-  - Standard ASCII characters
-  - Special keys (arrows, function keys, etc.)
-  - Modifier keys (Ctrl, Alt, Shift combinations)
-  - IME support for Asian languages
-- **Mouse input**:
-  - Text selection with mouse
-  - Copy to clipboard
-  - Paste from clipboard
-  - Optional mouse reporting to applications
+### 4. 入力処理
+- **キーボード入力**:
+  - 標準ASCII文字
+  - 特殊キー（矢印キー、ファンクションキーなど）
+  - 修飾キー（Ctrl、Alt、Shiftの組み合わせ）
+  - アジア言語のIMEサポート
+- **マウス入力**:
+  - マウスによるテキスト選択
+  - クリップボードへのコピー
+  - クリップボードからのペースト
+  - アプリケーションへのマウスレポート（オプション）
 
-### 5. Display Features
-- **Text selection**:
-  - Mouse-based selection
-  - Copy on select (optional)
-  - Rectangular selection (Alt+drag)
-- **Clipboard integration**:
-  - Copy/paste with Ctrl+Shift+C/V
-  - Middle-click paste
-- **URL detection**: Clickable URLs (Ctrl+click to open)
-- **Scrolling**:
-  - Scrollbar (optional)
+### 5. 表示機能
+- **テキスト選択**:
+  - マウスベースの選択
+  - 選択時自動コピー（オプション）
+  - 矩形選択（Alt+ドラッグ）
+- **クリップボード統合**:
+  - Ctrl+Shift+C/Vでコピー/ペースト
+  - 中クリックペースト
+- **URL検出**: クリック可能なURL（Ctrl+クリックで開く）
+- **スクロール**:
+  - スクロールバー（オプション）
   - Shift+PageUp/PageDown
-  - Mouse wheel support
+  - マウスホイールサポート
 
-## Technical Architecture
+## 技術アーキテクチャ
 
-### Component Structure
+### コンポーネント構成
 ```
 koteiterm/
 ├── src/
-│   ├── main.c              # Entry point, initialization
-│   ├── terminal.c/h        # Terminal emulator core (VT parsing)
-│   ├── pty.c/h             # PTY handling, shell process management
-│   ├── display.c/h         # X11/Wayland window and rendering
-│   ├── font.c/h            # Font loading and text rendering
-│   ├── input.c/h           # Keyboard and mouse input handling
-│   ├── config.c/h          # Configuration management
-│   └── utils.c/h           # Utility functions
+│   ├── main.c              # エントリポイント、初期化
+│   ├── terminal.c/h        # ターミナルエミュレータコア（VTパーサ）
+│   ├── pty.c/h             # PTY処理、シェルプロセス管理
+│   ├── display.c/h         # X11/Waylandウィンドウとレンダリング
+│   ├── font.c/h            # フォント読み込みとテキスト描画
+│   ├── input.c/h           # キーボードとマウス入力処理
+│   ├── config.c/h          # 設定管理
+│   └── utils.c/h           # ユーティリティ関数
 ├── include/
-│   └── koteiterm.h         # Common headers and definitions
+│   └── koteiterm.h         # 共通ヘッダと定義
 ├── config/
-│   └── koteiterm.conf      # Default configuration file
+│   └── koteiterm.conf      # デフォルト設定ファイル
 ├── tests/
-│   └── (unit tests)
+│   └── (ユニットテスト)
 ├── docs/
 │   └── README.md
 ├── Makefile
-└── spec.md (this file)
+└── spec.md (このファイル)
 ```
 
-### Dependencies
-- **libX11**: X11 window management
-- **libXft** or **libfreetype**: Font rendering
-- **libfontconfig**: Font discovery
-- **libutil**: PTY utilities (openpty, forkpty)
-- **libpthread**: Threading support (optional, for rendering)
+### 依存関係
+- **libX11**: X11ウィンドウ管理
+- **libXft** または **libfreetype**: フォントレンダリング
+- **libfontconfig**: フォント検索
+- **libutil**: PTYユーティリティ（openpty、forkpty）
+- **libpthread**: スレッドサポート（オプション、レンダリング用）
 
-### Key Algorithms
+### 主要アルゴリズム
 
-#### VT100 Escape Sequence Parser
-- State machine-based parser
-- Handle CSI (Control Sequence Introducer) sequences
-- Support for SGR (Select Graphic Rendition) color/style codes
-- Cursor movement commands
-- Screen manipulation (clear, scroll)
+#### VT100エスケープシーケンスパーサ
+- ステートマシンベースのパーサ
+- CSI（Control Sequence Introducer）シーケンスの処理
+- SGR（Select Graphic Rendition）カラー/スタイルコードのサポート
+- カーソル移動コマンド
+- 画面操作（クリア、スクロール）
 
-#### PTY Communication
+#### PTY通信
 ```
-Parent Process (koteiterm)  ←→  PTY Master
-                                    ↕
-                                PTY Slave  ←→  Child Process (shell)
+親プロセス (koteiterm)  ←→  PTY マスタ
+                                 ↕
+                             PTY スレーブ  ←→  子プロセス (shell)
 ```
 
-#### Rendering Pipeline
-1. Read data from PTY master
-2. Parse escape sequences and update terminal state
-3. Update internal screen buffer (2D character array)
-4. Render dirty regions to X11 window
-5. Handle vsync and refresh rate
+#### レンダリングパイプライン
+1. PTYマスタからデータを読み取る
+2. エスケープシーケンスを解析してターミナル状態を更新
+3. 内部スクリーンバッファ（2D文字配列）を更新
+4. 変更された領域をX11ウィンドウに描画
+5. vsyncとリフレッシュレートを処理
 
-## Configuration
+## 設定
 
-### Configuration File Format
-- Location: `~/.config/koteiterm/koteiterm.conf` or `/etc/koteiterm/koteiterm.conf`
-- Format: INI-style or simple key-value pairs
+### 設定ファイル形式
+- 場所: `~/.config/koteiterm/koteiterm.conf` または `/etc/koteiterm/koteiterm.conf`
+- 形式: INI形式またはシンプルなキー・バリューペア
 
-### Configurable Parameters
+### 設定可能パラメータ
 ```ini
 [terminal]
 rows = 24
@@ -145,7 +145,7 @@ foreground = #ffffff
 background = #000000
 color0 = #000000
 color1 = #cc0000
-; ... (16 colors)
+; ... (16色)
 
 [behavior]
 copy_on_select = false
@@ -153,60 +153,60 @@ scrollbar = true
 url_click = true
 ```
 
-## Development Phases
+## 開発フェーズ
 
-### Phase 1: Minimal Viable Product (MVP)
-- Basic PTY creation and shell execution
-- Simple X11 window with basic text rendering
-- VT100 escape sequence parsing (subset)
-- Basic keyboard input
-- Fixed 80x24 terminal size
+### フェーズ1: 最小実用製品（MVP）
+- 基本的なPTY作成とシェル実行
+- 基本的なテキスト描画を持つシンプルなX11ウィンドウ
+- VT100エスケープシーケンス解析（サブセット）
+- 基本的なキーボード入力
+- 固定80x24ターミナルサイズ
 
-### Phase 2: Enhanced Features
-- Full VT100/xterm compatibility
-- 256-color support
-- Window resizing
-- Scrollback buffer
-- Text selection and clipboard
+### フェーズ2: 拡張機能
+- 完全なVT100/xterm互換性
+- 256色サポート
+- ウィンドウリサイズ
+- スクロールバックバッファ
+- テキスト選択とクリップボード
 
-### Phase 3: Polish and Optimization
-- Configuration file support
-- Font selection and scaling
-- Performance optimization
-- IME support
-- URL detection and clicking
+### フェーズ3: 洗練と最適化
+- 設定ファイルサポート
+- フォント選択とスケーリング
+- パフォーマンス最適化
+- IMEサポート
+- URL検出とクリック
 
-### Phase 4: Advanced Features
-- Tab support (multiple terminals)
-- Split panes
-- Transparency and compositing
-- Custom key bindings
-- Themes and appearance customization
+### フェーズ4: 高度な機能
+- タブサポート（複数ターミナル）
+- 分割ペイン
+- 透過とコンポジティング
+- カスタムキーバインディング
+- テーマと外観カスタマイズ
 
-## Testing Strategy
-- **Unit tests**: Test individual components (parser, PTY handling)
-- **Integration tests**: Test terminal output with known escape sequences
-- **Manual testing**: Run common programs (vim, htop, less, etc.)
-- **Compatibility testing**: Compare with xterm behavior
+## テスト戦略
+- **ユニットテスト**: 個別コンポーネントのテスト（パーサ、PTY処理）
+- **統合テスト**: 既知のエスケープシーケンスでターミナル出力をテスト
+- **手動テスト**: 一般的なプログラムを実行（vim、htop、lessなど）
+- **互換性テスト**: xtermの動作と比較
 
-## Performance Goals
-- **Startup time**: < 100ms
-- **Input latency**: < 10ms
-- **Rendering**: 60 FPS minimum
-- **Memory usage**: < 50MB for single terminal instance
+## パフォーマンス目標
+- **起動時間**: < 100ms
+- **入力レイテンシ**: < 10ms
+- **レンダリング**: 最低60 FPS
+- **メモリ使用量**: 単一ターミナルインスタンスで < 50MB
 
-## Standards and References
+## 標準と参考資料
 - **ECMA-48**: Control Functions for Coded Character Sets
-- **VT100 User Guide**: DEC VT100 terminal specifications
+- **VT100 User Guide**: DEC VT100ターミナル仕様
 - **xterm control sequences**: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
-- **POSIX PTY**: IEEE Std 1003.1 pseudo-terminal specifications
+- **POSIX PTY**: IEEE Std 1003.1疑似端末仕様
 
-## Future Considerations
-- Wayland native support (in addition to X11)
-- GPU-accelerated rendering (OpenGL/Vulkan)
-- Sixel graphics support
-- Ligature support for programming fonts
-- Extension API for plugins
+## 将来的な検討事項
+- Waylandネイティブサポート（X11に加えて）
+- GPUアクセラレーション描画（OpenGL/Vulkan）
+- Sixelグラフィックサポート
+- プログラミングフォントのリガチャサポート
+- プラグイン用の拡張API
 
-## License
-TBD (suggest MIT or GPL)
+## ライセンス
+未定（MITまたはGPLを推奨）

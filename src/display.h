@@ -6,6 +6,7 @@
 #include <X11/Xft/Xft.h>
 #include <Imlib2.h>
 #include <stdbool.h>
+#include <time.h>
 
 /* ディスプレイ状態 */
 typedef struct {
@@ -30,6 +31,13 @@ typedef struct {
     Pixmap cursor_mask;        /* カーソル画像のマスク */
     int cursor_image_width;    /* カーソル画像の幅 */
     int cursor_image_height;   /* カーソル画像の高さ */
+    /* GIFアニメーション用 */
+    Pixmap *cursor_gif_frames;       /* GIFフレームのPixmap配列 */
+    Pixmap *cursor_gif_masks;        /* GIFフレームのマスク配列 */
+    int *cursor_gif_delays;          /* 各フレームの遅延時間（10ms単位） */
+    int cursor_gif_frame_count;      /* フレーム数 */
+    int cursor_gif_current_frame;    /* 現在のフレームインデックス */
+    struct timespec cursor_gif_last_update;  /* 最後のフレーム更新時刻 */
 } DisplayState;
 
 /* グローバルディスプレイ状態 */
@@ -70,5 +78,11 @@ void display_flush(void);
  * ターミナルバッファの内容を描画する
  */
 void display_render_terminal(void);
+
+/**
+ * GIFアニメーションカーソルを更新する
+ * メインループから定期的に呼び出される
+ */
+void display_update_gif_cursor(void);
 
 #endif /* DISPLAY_H */

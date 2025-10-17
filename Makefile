@@ -7,7 +7,7 @@ CFLAGS += -Iinclude
 CFLAGS += $(shell pkg-config --cflags freetype2 imlib2)
 
 # ライブラリ依存
-LDFLAGS = -lX11 -lXft -lfontconfig -lutil
+LDFLAGS = -lX11 -lXft -lfontconfig -lutil -lgif
 LDFLAGS += $(shell pkg-config --libs imlib2)
 
 # ディレクトリ

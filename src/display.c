@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <gif_lib.h>
 
 /* グローバルディスプレイ状態 */
 DisplayState g_display = {0};
@@ -180,6 +181,194 @@ static int utf8_encode(uint32_t codepoint, char *utf8)
 }
 
 /**
+ * GIFアニメーションを読み込む
+ * @param path GIFファイルのパス
+ * @return 成功時0、失敗時-1
+ */
+static int load_gif_animation(const char *path)
+{
+    int error_code;
+    GifFileType *gif = DGifOpenFileName(path, &error_code);
+    if (!gif) {
+        fprintf(stderr, "警告: GIFファイルを開けませんでした: %s (error: %d)\n", path, error_code);
+        return -1;
+    }
+
+    /* GIFの全フレームを読み込む */
+    if (DGifSlurp(gif) == GIF_ERROR) {
+        fprintf(stderr, "警告: GIF読み込みに失敗しました: %s\n", path);
+        DGifCloseFile(gif, &error_code);
+        return -1;
+    }
+
+    int frame_count = gif->ImageCount;
+    if (frame_count <= 0) {
+        fprintf(stderr, "警告: GIFにフレームがありません: %s\n", path);
+        DGifCloseFile(gif, &error_code);
+        return -1;
+    }
+
+    /* メモリを確保 */
+    g_display.cursor_gif_frames = calloc(frame_count, sizeof(Pixmap));
+    g_display.cursor_gif_masks = calloc(frame_count, sizeof(Pixmap));
+    g_display.cursor_gif_delays = calloc(frame_count, sizeof(int));
+    g_display.cursor_gif_frame_count = frame_count;
+    g_display.cursor_gif_current_frame = 0;
+
+    if (!g_display.cursor_gif_frames || !g_display.cursor_gif_masks || !g_display.cursor_gif_delays) {
+        fprintf(stderr, "警告: GIFフレーム用のメモリ確保に失敗しました\n");
+        free(g_display.cursor_gif_frames);
+        free(g_display.cursor_gif_masks);
+        free(g_display.cursor_gif_delays);
+        DGifCloseFile(gif, &error_code);
+        return -1;
+    }
+
+    Visual *visual = DefaultVisual(g_display.display, g_display.screen);
+    Colormap colormap = DefaultColormap(g_display.display, g_display.screen);
+
+    /* Imlib2コンテキストを設定 */
+    imlib_context_set_display(g_display.display);
+    imlib_context_set_visual(visual);
+    imlib_context_set_colormap(colormap);
+    imlib_context_set_drawable(g_display.window);
+
+    int width = gif->SWidth;
+    int height = gif->SHeight;
+
+    /* スケーリング計算 */
+    int scaled_width = (int)(width * g_display_options.cursor_scale);
+    int scaled_height = (int)(height * g_display_options.cursor_scale);
+    if (scaled_width <= 0) scaled_width = 1;
+    if (scaled_height <= 0) scaled_height = 1;
+
+    g_display.cursor_image_width = scaled_width;
+    g_display.cursor_image_height = scaled_height;
+
+    /* 各フレームを処理 */
+    uint8_t *canvas = calloc(width * height, 4);  /* RGBA */
+    if (!canvas) {
+        fprintf(stderr, "警告: GIFキャンバス用のメモリ確保に失敗しました\n");
+        free(g_display.cursor_gif_frames);
+        free(g_display.cursor_gif_masks);
+        free(g_display.cursor_gif_delays);
+        DGifCloseFile(gif, &error_code);
+        return -1;
+    }
+
+    for (int i = 0; i < frame_count; i++) {
+        SavedImage *frame = &gif->SavedImages[i];
+        GifImageDesc *desc = &frame->ImageDesc;
+
+        /* フレームの遅延時間と透明色インデックスを取得 */
+        int delay = 10;  /* デフォルト100ms */
+        int transparent_idx = -1;  /* 透明色なし */
+        for (int j = 0; j < frame->ExtensionBlockCount; j++) {
+            ExtensionBlock *ext = &frame->ExtensionBlocks[j];
+            if (ext->Function == GRAPHICS_EXT_FUNC_CODE && ext->ByteCount >= 4) {
+                /* Graphics Control Extension の構造:
+                 * Byte 0: フラグ (bit 0 = 透明色有効)
+                 * Byte 1-2: 遅延時間（10ms単位）
+                 * Byte 3: 透明色インデックス
+                 */
+                uint8_t flags = ext->Bytes[0];
+                delay = (ext->Bytes[2] << 8) | ext->Bytes[1];
+                if (delay == 0) delay = 10;  /* 0の場合はデフォルト */
+
+                /* 透明色フラグをチェック（bit 0） */
+                if (flags & 0x01) {
+                    transparent_idx = ext->Bytes[3];
+                }
+                break;
+            }
+        }
+        g_display.cursor_gif_delays[i] = delay;
+
+        /* カラーマップを取得 */
+        ColorMapObject *cmap = desc->ColorMap ? desc->ColorMap : gif->SColorMap;
+        if (!cmap) {
+            fprintf(stderr, "警告: GIFフレーム%dにカラーマップがありません\n", i);
+            continue;
+        }
+
+        /* フレームをBGRAキャンバスに描画（Imlib2用） */
+        for (int y = 0; y < desc->Height; y++) {
+            for (int x = 0; x < desc->Width; x++) {
+                int canvas_x = desc->Left + x;
+                int canvas_y = desc->Top + y;
+                if (canvas_x >= width || canvas_y >= height) continue;
+
+                int pixel_idx = y * desc->Width + x;
+                uint8_t color_idx = frame->RasterBits[pixel_idx];
+
+                int canvas_idx = (canvas_y * width + canvas_x) * 4;
+
+                /* 透明色かどうかチェック */
+                if (color_idx == transparent_idx) {
+                    /* 透明ピクセル: アルファ=0 */
+                    canvas[canvas_idx + 0] = 0;
+                    canvas[canvas_idx + 1] = 0;
+                    canvas[canvas_idx + 2] = 0;
+                    canvas[canvas_idx + 3] = 0;
+                } else if (color_idx < cmap->ColorCount) {
+                    /* 不透明ピクセル: BGRAフォーマット（Imlib2用） */
+                    GifColorType *color = &cmap->Colors[color_idx];
+                    canvas[canvas_idx + 0] = color->Blue;   /* B */
+                    canvas[canvas_idx + 1] = color->Green;  /* G */
+                    canvas[canvas_idx + 2] = color->Red;    /* R */
+                    canvas[canvas_idx + 3] = 255;           /* A */
+                }
+            }
+        }
+
+        /* Imlib2画像を作成 */
+        Imlib_Image img = imlib_create_image_using_copied_data(width, height, (uint32_t *)canvas);
+        if (!img) {
+            fprintf(stderr, "警告: GIFフレーム%dのImlib2画像作成に失敗しました\n", i);
+            continue;
+        }
+
+        imlib_context_set_image(img);
+        imlib_image_set_has_alpha(1);
+
+        /* スケーリング */
+        Imlib_Image scaled_img = imlib_create_cropped_scaled_image(
+            0, 0, width, height, scaled_width, scaled_height);
+        imlib_free_image();
+
+        if (!scaled_img) {
+            fprintf(stderr, "警告: GIFフレーム%dのスケーリングに失敗しました\n", i);
+            continue;
+        }
+
+        /* PixmapとMaskを生成 */
+        imlib_context_set_image(scaled_img);
+        imlib_render_pixmaps_for_whole_image(&g_display.cursor_gif_frames[i],
+                                             &g_display.cursor_gif_masks[i]);
+        imlib_free_image();
+    }
+
+    free(canvas);
+    DGifCloseFile(gif, &error_code);
+
+    /* 初回のフレームを設定 */
+    if (frame_count > 0) {
+        g_display.cursor_pixmap = g_display.cursor_gif_frames[0];
+        g_display.cursor_mask = g_display.cursor_gif_masks[0];
+    }
+
+    /* タイマー初期化 */
+    clock_gettime(CLOCK_MONOTONIC, &g_display.cursor_gif_last_update);
+
+    if (g_debug) {
+        printf("GIFアニメーションを読み込みました: %s (%dフレーム, サイズ: %dx%d → %dx%d)\n",
+               path, frame_count, width, height, scaled_width, scaled_height);
+    }
+
+    return 0;
+}
+
+/**
  * ディスプレイを初期化する
  */
 int display_init(int width, int height)
@@ -298,58 +487,71 @@ int display_init(int width, int height)
 
     /* 画像カーソルのロード */
     if (g_display_options.cursor_shape == TERM_CURSOR_IMAGE && g_display_options.cursor_image_path) {
-        /* Imlib2コンテキストを設定 */
-        imlib_context_set_display(g_display.display);
-        imlib_context_set_visual(visual);
-        imlib_context_set_colormap(colormap);
-        imlib_context_set_drawable(g_display.window);
+        /* 拡張子でGIFかどうか判定 */
+        const char *ext = strrchr(g_display_options.cursor_image_path, '.');
+        bool is_gif = (ext && strcasecmp(ext, ".gif") == 0);
 
-        /* 画像をロード */
-        Imlib_Image image = imlib_load_image(g_display_options.cursor_image_path);
-        if (!image) {
-            fprintf(stderr, "警告: カーソル画像の読み込みに失敗しました: %s\n", g_display_options.cursor_image_path);
-            /* デフォルトカーソルにフォールバック */
-            g_display_options.cursor_shape = TERM_CURSOR_BAR;
+        if (is_gif) {
+            /* GIFアニメーションを読み込む */
+            if (load_gif_animation(g_display_options.cursor_image_path) != 0) {
+                /* 失敗した場合はデフォルトカーソルにフォールバック */
+                g_display_options.cursor_shape = TERM_CURSOR_BAR;
+            }
         } else {
-            imlib_context_set_image(image);
+            /* 静止画像（PNG等）をImlib2で読み込む */
+            /* Imlib2コンテキストを設定 */
+            imlib_context_set_display(g_display.display);
+            imlib_context_set_visual(visual);
+            imlib_context_set_colormap(colormap);
+            imlib_context_set_drawable(g_display.window);
 
-            int orig_width = imlib_image_get_width();
-            int orig_height = imlib_image_get_height();
-
-            /* スケーリング計算 */
-            int scaled_width = (int)(orig_width * g_display_options.cursor_scale);
-            int scaled_height = (int)(orig_height * g_display_options.cursor_scale);
-
-            if (scaled_width <= 0) scaled_width = 1;
-            if (scaled_height <= 0) scaled_height = 1;
-
-            /* スケーリング済み画像を作成 */
-            Imlib_Image scaled_image = imlib_create_cropped_scaled_image(
-                0, 0, orig_width, orig_height, scaled_width, scaled_height);
-
-            /* 元の画像を解放 */
-            imlib_free_image();
-
-            if (!scaled_image) {
-                fprintf(stderr, "警告: カーソル画像のスケーリングに失敗しました\n");
+            /* 画像をロード */
+            Imlib_Image image = imlib_load_image(g_display_options.cursor_image_path);
+            if (!image) {
+                fprintf(stderr, "警告: カーソル画像の読み込みに失敗しました: %s\n", g_display_options.cursor_image_path);
+                /* デフォルトカーソルにフォールバック */
                 g_display_options.cursor_shape = TERM_CURSOR_BAR;
             } else {
-                imlib_context_set_image(scaled_image);
+                imlib_context_set_image(image);
 
-                /* Pixmap と Mask を作成 */
-                imlib_render_pixmaps_for_whole_image(&g_display.cursor_pixmap, &g_display.cursor_mask);
+                int orig_width = imlib_image_get_width();
+                int orig_height = imlib_image_get_height();
 
-                /* サイズを保存 */
-                g_display.cursor_image_width = scaled_width;
-                g_display.cursor_image_height = scaled_height;
+                /* スケーリング計算 */
+                int scaled_width = (int)(orig_width * g_display_options.cursor_scale);
+                int scaled_height = (int)(orig_height * g_display_options.cursor_scale);
 
-                /* Imlib_Imageを保存（アニメーション用に後で使う可能性がある） */
-                g_display.cursor_image = scaled_image;
+                if (scaled_width <= 0) scaled_width = 1;
+                if (scaled_height <= 0) scaled_height = 1;
 
-                if (g_debug) {
-                    printf("カーソル画像を読み込みました: %s (元: %dx%d, スケール: %.2f, 結果: %dx%d)\n",
-                           g_display_options.cursor_image_path, orig_width, orig_height,
-                           g_display_options.cursor_scale, scaled_width, scaled_height);
+                /* スケーリング済み画像を作成 */
+                Imlib_Image scaled_image = imlib_create_cropped_scaled_image(
+                    0, 0, orig_width, orig_height, scaled_width, scaled_height);
+
+                /* 元の画像を解放 */
+                imlib_free_image();
+
+                if (!scaled_image) {
+                    fprintf(stderr, "警告: カーソル画像のスケーリングに失敗しました\n");
+                    g_display_options.cursor_shape = TERM_CURSOR_BAR;
+                } else {
+                    imlib_context_set_image(scaled_image);
+
+                    /* Pixmap と Mask を作成 */
+                    imlib_render_pixmaps_for_whole_image(&g_display.cursor_pixmap, &g_display.cursor_mask);
+
+                    /* サイズを保存 */
+                    g_display.cursor_image_width = scaled_width;
+                    g_display.cursor_image_height = scaled_height;
+
+                    /* Imlib_Imageを保存 */
+                    g_display.cursor_image = scaled_image;
+
+                    if (g_debug) {
+                        printf("カーソル画像を読み込みました: %s (元: %dx%d, スケール: %.2f, 結果: %dx%d)\n",
+                               g_display_options.cursor_image_path, orig_width, orig_height,
+                               g_display_options.cursor_scale, scaled_width, scaled_height);
+                    }
                 }
             }
         }
@@ -406,12 +608,33 @@ void display_cleanup(void)
         g_display.cursor_image = NULL;
     }
 
-    /* Pixmapを解放 */
-    if (g_display.cursor_pixmap) {
+    /* GIFアニメーションフレームを解放 */
+    if (g_display.cursor_gif_frames) {
+        for (int i = 0; i < g_display.cursor_gif_frame_count; i++) {
+            if (g_display.cursor_gif_frames[i]) {
+                XFreePixmap(g_display.display, g_display.cursor_gif_frames[i]);
+            }
+            if (g_display.cursor_gif_masks && g_display.cursor_gif_masks[i]) {
+                XFreePixmap(g_display.display, g_display.cursor_gif_masks[i]);
+            }
+        }
+        free(g_display.cursor_gif_frames);
+        free(g_display.cursor_gif_masks);
+        free(g_display.cursor_gif_delays);
+        g_display.cursor_gif_frames = NULL;
+        g_display.cursor_gif_masks = NULL;
+        g_display.cursor_gif_delays = NULL;
+        /* cursor_pixmap/cursor_maskはGIFフレームの一部なので、二重解放を防ぐため0にする */
+        g_display.cursor_pixmap = 0;
+        g_display.cursor_mask = 0;
+    }
+
+    /* Pixmapを解放（GIF以外の静止画像用） */
+    if (g_display.cursor_pixmap && !g_display.cursor_gif_frames) {
         XFreePixmap(g_display.display, g_display.cursor_pixmap);
         g_display.cursor_pixmap = 0;
     }
-    if (g_display.cursor_mask) {
+    if (g_display.cursor_mask && !g_display.cursor_gif_frames) {
         XFreePixmap(g_display.display, g_display.cursor_mask);
         g_display.cursor_mask = 0;
     }
@@ -876,5 +1099,45 @@ void display_render_terminal(void)
                 }
                 break;
         }
+    }
+}
+
+/**
+ * GIFアニメーションカーソルを更新する
+ * メインループから定期的に呼び出される
+ */
+void display_update_gif_cursor(void)
+{
+    /* GIFアニメーションがない場合は何もしない */
+    if (!g_display.cursor_gif_frames || g_display.cursor_gif_frame_count <= 1) {
+        return;
+    }
+
+    /* 現在時刻を取得 */
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    /* 前回の更新からの経過時間を計算（ミリ秒単位） */
+    long elapsed_ms = (now.tv_sec - g_display.cursor_gif_last_update.tv_sec) * 1000 +
+                      (now.tv_nsec - g_display.cursor_gif_last_update.tv_nsec) / 1000000;
+
+    /* 現在のフレームの遅延時間（10ms単位 → ms）*/
+    int current_delay_ms = g_display.cursor_gif_delays[g_display.cursor_gif_current_frame] * 10;
+
+    /* フレーム切り替えタイミングをチェック */
+    if (elapsed_ms >= current_delay_ms) {
+        /* 次のフレームに進む */
+        g_display.cursor_gif_current_frame++;
+        if (g_display.cursor_gif_current_frame >= g_display.cursor_gif_frame_count) {
+            /* ループ */
+            g_display.cursor_gif_current_frame = 0;
+        }
+
+        /* 現在のフレームのPixmapとMaskを設定 */
+        g_display.cursor_pixmap = g_display.cursor_gif_frames[g_display.cursor_gif_current_frame];
+        g_display.cursor_mask = g_display.cursor_gif_masks[g_display.cursor_gif_current_frame];
+
+        /* タイマーを更新 */
+        g_display.cursor_gif_last_update = now;
     }
 }

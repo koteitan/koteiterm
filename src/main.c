@@ -176,6 +176,9 @@ static void main_loop(void)
             break;
         }
 
+        /* GIFアニメーションカーソルを更新 */
+        display_update_gif_cursor();
+
         /* 描画処理 */
         display_clear();
         display_render_terminal();
@@ -217,7 +220,8 @@ static void print_usage(const char *prog_name)
     printf("    <shape> = underline  短いアンダーライン\n");
     printf("    <shape> = hollow     中抜き四角\n");
     printf("    <shape> = block      中埋め四角\n");
-    printf("  --cursor \"path/to/file.png\"\n");
+    printf("  --cursor \"path/to/file.png\"   (PNG/GIF対応)\n");
+    printf("  --cursor \"path/to/file.gif\"   (アニメーションGIF対応)\n");
     printf("  --cursor \"path/to/file.png:x:y\"\n");
     printf("  --cursor \"path/to/file.png:x:y:scale\"\n");
     printf("    x,y  : オフセット（ピクセル、デフォルト0,0）\n");

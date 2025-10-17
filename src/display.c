@@ -282,6 +282,12 @@ bool display_handle_events(void)
     while (XPending(g_display.display) > 0) {
         XNextEvent(g_display.display, &event);
 
+        /* IMEにイベントを渡す */
+        if (XFilterEvent(&event, None)) {
+            /* IMEがイベントを処理した場合はスキップ */
+            continue;
+        }
+
         switch (event.type) {
             case Expose:
                 /* 再描画が必要 */

@@ -5,6 +5,7 @@ obj/
 *.a
 *.so
 a.out
+test_keycode
 
 # デバッグファイル
 *.dSYM/

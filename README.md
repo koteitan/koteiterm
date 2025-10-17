@@ -2,7 +2,7 @@
 
 シンプルなLinuxターミナルエミュレータ
 
-<video src="https://v.nostr.build/D4LjcHjpjYlZ5MPC.mp4" controls></video>
+![koteiterm demo](image/preview.gif)
 
 ## 概要
 

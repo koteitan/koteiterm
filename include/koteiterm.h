@@ -17,7 +17,7 @@
 #define DEFAULT_ROWS 24
 #define DEFAULT_COLS 80
 #define DEFAULT_SCROLLBACK 1000
-#define DEFAULT_FONT "FiraCode Nerd Font Mono"
+#define DEFAULT_FONT "HackGen Console NF"
 #define DEFAULT_FONT_SIZE 12
 #define DEFAULT_WINDOW_WIDTH 800
 #define DEFAULT_WINDOW_HEIGHT 600

@@ -74,8 +74,8 @@ make
 - ✅ スクロールバック履歴（1000行）
 
 ### フォント
-- ✅ デフォルト: FiraCode Nerd Font Mono
-- ✅ Nerd Fonts対応（Powerline記号、アイコン）
+- ✅ デフォルト: HackGen Console NF（日本語+Nerd Fonts統合フォント）
+- ✅ 日本語とNerd Fontsアイコンを同一フォントで表示
 - ✅ WSL環境でWindowsフォントにアクセス可能
 - ✅ fontconfig言語ヒント（`:lang=ja`）で日本語フォント優先
 

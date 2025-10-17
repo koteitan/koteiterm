@@ -15,6 +15,12 @@
 /* グローバルディスプレイ状態 */
 DisplayState g_display = {0};
 
+/* マウス選択状態 */
+static bool mouse_selecting = false;
+
+/* クリップボード用の選択テキスト */
+static char *selection_text = NULL;
+
 /* ANSI 16色パレット (Xterm default colors) */
 static const struct {
     unsigned short r, g, b;
@@ -252,6 +258,12 @@ void display_cleanup(void)
 
     XCloseDisplay(g_display.display);
 
+    /* 選択テキストを解放 */
+    if (selection_text) {
+        free(selection_text);
+        selection_text = NULL;
+    }
+
     printf("X11ディスプレイをクリーンアップしました\n");
 
     memset(&g_display, 0, sizeof(g_display));
@@ -332,8 +344,101 @@ bool display_handle_events(void)
                 } else if (event.xbutton.button == Button5) {
                     /* 下スクロール */
                     terminal_scroll_by(-3);  /* 3行ずつスクロール */
+                } else if (event.xbutton.button == Button1) {
+                    /* 左ボタン: 選択開始 */
+                    int char_width = font_get_char_width();
+                    int char_height = font_get_char_height();
+                    int x = event.xbutton.x / char_width;
+                    int y = event.xbutton.y / char_height;
+                    terminal_selection_start(x, y);
+                    mouse_selecting = true;
                 }
-                /* その他のボタンは将来実装 */
+                break;
+
+            case ButtonRelease:
+                if (event.xbutton.button == Button1 && mouse_selecting) {
+                    /* 選択終了 */
+                    terminal_selection_end();
+                    mouse_selecting = false;
+
+                    /* 選択されたテキストをPRIMARY選択にコピー */
+                    if (selection_text) {
+                        free(selection_text);
+                    }
+                    selection_text = terminal_get_selected_text();
+                    if (selection_text) {
+                        XSetSelectionOwner(g_display.display, XA_PRIMARY,
+                                          g_display.window, CurrentTime);
+                    }
+                } else if (event.xbutton.button == Button2) {
+                    /* 中ボタン: 貼り付け */
+                    XConvertSelection(g_display.display, XA_PRIMARY, XA_STRING,
+                                     XA_PRIMARY, g_display.window, CurrentTime);
+                }
+                break;
+
+            case SelectionRequest:
+            {
+                /* 他のアプリケーションが選択を要求 */
+                XSelectionRequestEvent *req = &event.xselectionrequest;
+                XSelectionEvent ev;
+                ev.type = SelectionNotify;
+                ev.requestor = req->requestor;
+                ev.selection = req->selection;
+                ev.target = req->target;
+                ev.time = req->time;
+                ev.property = None;
+
+                if (req->target == XA_STRING && selection_text) {
+                    XChangeProperty(g_display.display, req->requestor,
+                                   req->property, XA_STRING, 8,
+                                   PropModeReplace,
+                                   (unsigned char *)selection_text,
+                                   strlen(selection_text));
+                    ev.property = req->property;
+                }
+
+                XSendEvent(g_display.display, req->requestor, False, 0, (XEvent *)&ev);
+                break;
+            }
+
+            case SelectionNotify:
+            {
+                /* 選択データを受信 */
+                if (event.xselection.property != None) {
+                    Atom actual_type;
+                    int actual_format;
+                    unsigned long nitems, bytes_after;
+                    unsigned char *data = NULL;
+
+                    if (XGetWindowProperty(g_display.display, g_display.window,
+                                          event.xselection.property, 0, 8192,
+                                          False, AnyPropertyType,
+                                          &actual_type, &actual_format,
+                                          &nitems, &bytes_after, &data) == Success) {
+                        if (data && nitems > 0) {
+                            /* ターミナルに貼り付け */
+                            pty_write((const char *)data, nitems);
+                        }
+                        if (data) {
+                            XFree(data);
+                        }
+                    }
+                    XDeleteProperty(g_display.display, g_display.window,
+                                   event.xselection.property);
+                }
+                break;
+            }
+
+            case MotionNotify:
+                if (mouse_selecting) {
+                    /* 選択を更新 */
+                    int char_width = font_get_char_width();
+                    int char_height = font_get_char_height();
+                    int x = event.xmotion.x / char_width;
+                    int y = event.xmotion.y / char_height;
+                    terminal_selection_update(x, y);
+                }
                 break;
 
             default:
@@ -431,11 +536,25 @@ void display_render_terminal(void)
             uint8_t fg_idx = cell->attr.fg_color;
             uint8_t bg_idx = cell->attr.bg_color;
 
+            /* 選択範囲のハイライト */
+            bool is_selected = terminal_is_selected(x, y);
+
             /* 反転属性を適用 */
             if (cell->attr.flags & ATTR_REVERSE) {
                 uint8_t tmp = fg_idx;
                 fg_idx = bg_idx;
                 bg_idx = tmp;
+            }
+
+            /* 選択範囲は色を反転 */
+            if (is_selected) {
+                uint8_t tmp = fg_idx;
+                fg_idx = bg_idx;
+                bg_idx = tmp;
+                /* 背景が黒の場合は白にする */
+                if (bg_idx == 0) {
+                    bg_idx = 7;  /* 白 */
+                }
             }
 
             /* WIDE_CHAR_CONTINUATIONはスキップ（全角文字の2セル目） */

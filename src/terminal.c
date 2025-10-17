@@ -809,3 +809,155 @@ ScrollbackLine *terminal_get_scrollback_line(int line_index)
     int idx = (g_terminal.scrollback.head + line_index) % g_terminal.scrollback.capacity;
     return &g_terminal.scrollback.lines[idx];
 }
+
+/**
+ * 選択を開始
+ */
+void terminal_selection_start(int x, int y)
+{
+    g_terminal.selection.active = true;
+    g_terminal.selection.start_x = x;
+    g_terminal.selection.start_y = y;
+    g_terminal.selection.end_x = x;
+    g_terminal.selection.end_y = y;
+}
+
+/**
+ * 選択を更新（ドラッグ中）
+ */
+void terminal_selection_update(int x, int y)
+{
+    if (!g_terminal.selection.active) {
+        return;
+    }
+
+    g_terminal.selection.end_x = x;
+    g_terminal.selection.end_y = y;
+}
+
+/**
+ * 選択を終了
+ */
+void terminal_selection_end(void)
+{
+    /* 選択状態はactiveのままにして、範囲を保持 */
+}
+
+/**
+ * 選択をクリア
+ */
+void terminal_selection_clear(void)
+{
+    g_terminal.selection.active = false;
+    g_terminal.selection.start_x = 0;
+    g_terminal.selection.start_y = 0;
+    g_terminal.selection.end_x = 0;
+    g_terminal.selection.end_y = 0;
+}
+
+/**
+ * 指定位置が選択範囲内かチェック
+ */
+bool terminal_is_selected(int x, int y)
+{
+    if (!g_terminal.selection.active) {
+        return false;
+    }
+
+    int start_x = g_terminal.selection.start_x;
+    int start_y = g_terminal.selection.start_y;
+    int end_x = g_terminal.selection.end_x;
+    int end_y = g_terminal.selection.end_y;
+
+    /* 開始と終了を正規化（開始 < 終了） */
+    if (start_y > end_y || (start_y == end_y && start_x > end_x)) {
+        int tmp;
+        tmp = start_x; start_x = end_x; end_x = tmp;
+        tmp = start_y; start_y = end_y; end_y = tmp;
+    }
+
+    /* 範囲チェック */
+    if (y < start_y || y > end_y) {
+        return false;
+    }
+
+    if (y == start_y && y == end_y) {
+        /* 同じ行 */
+        return x >= start_x && x <= end_x;
+    } else if (y == start_y) {
+        /* 開始行 */
+        return x >= start_x;
+    } else if (y == end_y) {
+        /* 終了行 */
+        return x <= end_x;
+    } else {
+        /* 中間行 */
+        return true;
+    }
+}
+
+/**
+ * 選択されたテキストを取得
+ */
+char *terminal_get_selected_text(void)
+{
+    if (!g_terminal.selection.active) {
+        return NULL;
+    }
+
+    int start_x = g_terminal.selection.start_x;
+    int start_y = g_terminal.selection.start_y;
+    int end_x = g_terminal.selection.end_x;
+    int end_y = g_terminal.selection.end_y;
+
+    /* 開始と終了を正規化 */
+    if (start_y > end_y || (start_y == end_y && start_x > end_x)) {
+        int tmp;
+        tmp = start_x; start_x = end_x; end_x = tmp;
+        tmp = start_y; start_y = end_y; end_y = tmp;
+    }
+
+    /* バッファサイズを推定 */
+    int estimated_size = (end_y - start_y + 1) * (g_terminal.cols + 1) * 4 + 1;
+    char *text = malloc(estimated_size);
+    if (!text) {
+        return NULL;
+    }
+
+    char *p = text;
+    for (int y = start_y; y <= end_y; y++) {
+        int col_start = (y == start_y) ? start_x : 0;
+        int col_end = (y == end_y) ? end_x : g_terminal.cols - 1;
+
+        for (int x = col_start; x <= col_end; x++) {
+            Cell *cell = terminal_get_cell(x, y);
+            if (cell && cell->ch != ' ' && cell->ch != WIDE_CHAR_CONTINUATION) {
+                /* UTF-8エンコード */
+                uint32_t ch = cell->ch;
+                if (ch < 0x80) {
+                    *p++ = (char)ch;
+                } else if (ch < 0x800) {
+                    *p++ = 0xC0 | ((ch >> 6) & 0x1F);
+                    *p++ = 0x80 | (ch & 0x3F);
+                } else if (ch < 0x10000) {
+                    *p++ = 0xE0 | ((ch >> 12) & 0x0F);
+                    *p++ = 0x80 | ((ch >> 6) & 0x3F);
+                    *p++ = 0x80 | (ch & 0x3F);
+                } else {
+                    *p++ = 0xF0 | ((ch >> 18) & 0x07);
+                    *p++ = 0x80 | ((ch >> 12) & 0x3F);
+                    *p++ = 0x80 | ((ch >> 6) & 0x3F);
+                    *p++ = 0x80 | (ch & 0x3F);
+                }
+            }
+        }
+
+        /* 行末に改行を追加（最終行以外） */
+        if (y < end_y) {
+            *p++ = '\n';
+        }
+    }
+
+    *p = '\0';
+    return text;
+}

@@ -41,6 +41,13 @@ typedef struct {
     int head;               /* リングバッファの先頭位置 */
 } ScrollbackBuffer;
 
+/* 選択状態 */
+typedef struct {
+    bool active;            /* 選択中かどうか */
+    int start_x, start_y;   /* 選択開始位置 */
+    int end_x, end_y;       /* 選択終了位置 */
+} Selection;
+
 /* ターミナルバッファ */
 typedef struct {
     Cell *cells;            /* セル配列（rows * cols） */
@@ -51,6 +58,7 @@ typedef struct {
     bool cursor_visible;    /* カーソル表示 */
     ScrollbackBuffer scrollback;  /* スクロールバック履歴 */
     int scroll_offset;      /* スクロールオフセット（0=最下部） */
+    Selection selection;    /* 選択状態 */
 } TerminalBuffer;
 
 /* グローバルターミナルバッファ */
@@ -172,5 +180,43 @@ void terminal_scroll_to_bottom(void);
  * @return 行へのポインタ、範囲外の場合NULL
  */
 ScrollbackLine *terminal_get_scrollback_line(int line_index);
+
+/**
+ * 選択を開始
+ * @param x X座標
+ * @param y Y座標
+ */
+void terminal_selection_start(int x, int y);
+
+/**
+ * 選択を更新（ドラッグ中）
+ * @param x X座標
+ * @param y Y座標
+ */
+void terminal_selection_update(int x, int y);
+
+/**
+ * 選択を終了
+ */
+void terminal_selection_end(void);
+
+/**
+ * 選択をクリア
+ */
+void terminal_selection_clear(void);
+
+/**
+ * 指定位置が選択範囲内かチェック
+ * @param x X座標
+ * @param y Y座標
+ * @return 選択範囲内ならtrue
+ */
+bool terminal_is_selected(int x, int y);
+
+/**
+ * 選択されたテキストを取得
+ * @return 選択されたテキスト（mallocで確保、呼び出し側でfree必要）
+ */
+char *terminal_get_selected_text(void);
 
 #endif /* TERMINAL_H */

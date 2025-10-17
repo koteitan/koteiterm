@@ -40,6 +40,37 @@ static const struct {
 /* Xftカラーキャッシュ */
 static XftColor xft_color_cache[16];
 
+/* UTF-8エンコード関数 */
+static int utf8_encode(uint32_t codepoint, char *utf8)
+{
+    if (codepoint < 0x80) {
+        /* 1バイト */
+        utf8[0] = (char)codepoint;
+        return 1;
+    } else if (codepoint < 0x800) {
+        /* 2バイト */
+        utf8[0] = 0xC0 | ((codepoint >> 6) & 0x1F);
+        utf8[1] = 0x80 | (codepoint & 0x3F);
+        return 2;
+    } else if (codepoint < 0x10000) {
+        /* 3バイト */
+        utf8[0] = 0xE0 | ((codepoint >> 12) & 0x0F);
+        utf8[1] = 0x80 | ((codepoint >> 6) & 0x3F);
+        utf8[2] = 0x80 | (codepoint & 0x3F);
+        return 3;
+    } else if (codepoint < 0x110000) {
+        /* 4バイト */
+        utf8[0] = 0xF0 | ((codepoint >> 18) & 0x07);
+        utf8[1] = 0x80 | ((codepoint >> 12) & 0x3F);
+        utf8[2] = 0x80 | ((codepoint >> 6) & 0x3F);
+        utf8[3] = 0x80 | (codepoint & 0x3F);
+        return 4;
+    }
+    /* 不正なコードポイント */
+    utf8[0] = '?';
+    return 1;
+}
+
 /**
  * ディスプレイを初期化する
  */
@@ -359,17 +390,10 @@ void display_render_terminal(void)
             /* 文字を描画 */
             if (cell->ch != ' ' && cell->ch != 0) {
                 char utf8[5];
-                int len = 0;
+                int len;
 
-                /* Unicode を UTF-8 に変換（簡易版：ASCII のみ） */
-                if (cell->ch < 0x80) {
-                    utf8[0] = (char)cell->ch;
-                    len = 1;
-                } else {
-                    /* 将来: 完全なUTF-8変換を実装 */
-                    utf8[0] = '?';
-                    len = 1;
-                }
+                /* Unicode を UTF-8 に変換 */
+                len = utf8_encode(cell->ch, utf8);
                 utf8[len] = '\0';
 
                 /* 前景色を選択 */

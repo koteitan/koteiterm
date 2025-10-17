@@ -18,6 +18,53 @@ static CellAttr g_current_attr = {
     .flags = 0
 };
 
+/* UTF-8デコード関数 */
+static int utf8_decode(const unsigned char *data, size_t size, uint32_t *codepoint)
+{
+    if (size < 1) {
+        return 0;
+    }
+
+    unsigned char first = data[0];
+
+    /* 1バイト文字 (ASCII) */
+    if ((first & 0x80) == 0) {
+        *codepoint = first;
+        return 1;
+    }
+
+    /* 2バイト文字 */
+    if ((first & 0xE0) == 0xC0) {
+        if (size < 2) return 0;
+        if ((data[1] & 0xC0) != 0x80) return 0;
+        *codepoint = ((first & 0x1F) << 6) | (data[1] & 0x3F);
+        return 2;
+    }
+
+    /* 3バイト文字 */
+    if ((first & 0xF0) == 0xE0) {
+        if (size < 3) return 0;
+        if ((data[1] & 0xC0) != 0x80) return 0;
+        if ((data[2] & 0xC0) != 0x80) return 0;
+        *codepoint = ((first & 0x0F) << 12) | ((data[1] & 0x3F) << 6) | (data[2] & 0x3F);
+        return 3;
+    }
+
+    /* 4バイト文字 */
+    if ((first & 0xF8) == 0xF0) {
+        if (size < 4) return 0;
+        if ((data[1] & 0xC0) != 0x80) return 0;
+        if ((data[2] & 0xC0) != 0x80) return 0;
+        if ((data[3] & 0xC0) != 0x80) return 0;
+        *codepoint = ((first & 0x07) << 18) | ((data[1] & 0x3F) << 12) |
+                     ((data[2] & 0x3F) << 6) | (data[3] & 0x3F);
+        return 4;
+    }
+
+    /* 不正なUTF-8シーケンス */
+    return 0;
+}
+
 /**
  * ターミナルバッファを初期化する
  */
@@ -560,22 +607,26 @@ void terminal_write(const char *data, size_t size)
     static char csi_buf[256];
     static int csi_len = 0;
 
-    for (size_t i = 0; i < size; i++) {
+    for (size_t i = 0; i < size; ) {
         unsigned char ch = (unsigned char)data[i];
 
         switch (state) {
             case STATE_NORMAL:
                 if (ch == 0x1B) {  /* ESC */
                     state = STATE_ESC;
+                    i++;
                 } else if (ch == '\n') {
                     terminal_newline();
+                    i++;
                 } else if (ch == '\r') {
                     terminal_carriage_return();
+                    i++;
                 } else if (ch == '\b') {
                     /* バックスペース */
                     if (g_terminal.cursor_x > 0) {
                         g_terminal.cursor_x--;
                     }
+                    i++;
                 } else if (ch == '\t') {
                     /* タブ: 次の8の倍数位置へ */
                     int next_tab = ((g_terminal.cursor_x / 8) + 1) * 8;
@@ -583,11 +634,22 @@ void terminal_write(const char *data, size_t size)
                         next_tab = g_terminal.cols - 1;
                     }
                     g_terminal.cursor_x = next_tab;
-                } else if (ch >= 0x20) {
-                    /* 表示可能文字 */
-                    terminal_put_char_at_cursor(ch);
+                    i++;
+                } else if (ch >= 0x20 || (ch & 0x80)) {
+                    /* UTF-8文字をデコード */
+                    uint32_t codepoint;
+                    int bytes = utf8_decode((const unsigned char *)&data[i], size - i, &codepoint);
+                    if (bytes > 0) {
+                        terminal_put_char_at_cursor(codepoint);
+                        i += bytes;
+                    } else {
+                        /* デコード失敗、スキップ */
+                        i++;
+                    }
+                } else {
+                    /* その他の制御文字は無視 */
+                    i++;
                 }
-                /* その他の制御文字は無視 */
                 break;
 
             case STATE_ESC:
@@ -599,6 +661,7 @@ void terminal_write(const char *data, size_t size)
                     /* その他のエスケープシーケンスは無視 */
                     state = STATE_NORMAL;
                 }
+                i++;
                 break;
 
             case STATE_CSI:
@@ -617,6 +680,7 @@ void terminal_write(const char *data, size_t size)
                     /* 予期しない文字、中断 */
                     state = STATE_NORMAL;
                 }
+                i++;
                 break;
         }
     }

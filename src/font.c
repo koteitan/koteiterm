@@ -19,8 +19,8 @@ int font_init(Display *display, int screen, const char *font_name, int font_size
     char font_pattern[256];
     XGlyphInfo extents;
 
-    /* フォントパターンを構築 */
-    snprintf(font_pattern, sizeof(font_pattern), "%s:size=%d:antialias=true",
+    /* フォントパターンを構築（日本語対応） */
+    snprintf(font_pattern, sizeof(font_pattern), "%s:size=%d:antialias=true:lang=ja",
              font_name, font_size);
 
     /* Xftフォントを開く */

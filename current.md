@@ -96,6 +96,8 @@ koteiterm/
 - 日本語フォント: fontconfig の `:lang=ja` で日本語フォント優先選択
 - 全角文字対応: East Asian Width検出により日本語/中国語等を2セル表示
 - 継続マーカー (0xFFFFFFFE): 全角文字の2セル目を管理し、重複描画を防止
+- Nerd Fonts対応: FiraCode Nerd Font Monoでvim-airline系アイコン表示可能
+- WSLフォント連携: fontconfig設定でWindowsフォントにアクセス
 - 次はマウス選択とクリップボード実装
 
 ---

@@ -372,14 +372,10 @@ bool display_handle_events(void)
 
                     /* ドラッグしていない場合（開始位置と終了位置が同じ）は選択をクリア */
                     if (end_x == selection_start_x && end_y == selection_start_y) {
+                        /* 画面上の選択表示のみクリア（クリップボードは保持） */
                         terminal_selection_clear();
                         mouse_selecting = false;
-
-                        /* 選択テキストもクリア */
-                        if (selection_text) {
-                            free(selection_text);
-                            selection_text = NULL;
-                        }
+                        /* 注: selection_text はクリアしない（前回の選択内容を保持） */
                     } else {
                         /* ドラッグした場合は選択を確定 */
                         terminal_selection_end();

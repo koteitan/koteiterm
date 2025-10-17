@@ -14,6 +14,31 @@
 /* グローバルディスプレイ状態 */
 DisplayState g_display = {0};
 
+/* ANSI 16色パレット (Xterm default colors) */
+static const struct {
+    unsigned short r, g, b;
+} ansi_colors[16] = {
+    {0x0000, 0x0000, 0x0000},  /* 0: 黒 */
+    {0xcd00, 0x0000, 0x0000},  /* 1: 赤 */
+    {0x0000, 0xcd00, 0x0000},  /* 2: 緑 */
+    {0xcd00, 0xcd00, 0x0000},  /* 3: 黄 */
+    {0x0000, 0x0000, 0xee00},  /* 4: 青 */
+    {0xcd00, 0x0000, 0xcd00},  /* 5: マゼンタ */
+    {0x0000, 0xcd00, 0xcd00},  /* 6: シアン */
+    {0xe5e5, 0xe5e5, 0xe5e5},  /* 7: 白 */
+    {0x7f7f, 0x7f7f, 0x7f7f},  /* 8: 明るい黒 (グレー) */
+    {0xff00, 0x0000, 0x0000},  /* 9: 明るい赤 */
+    {0x0000, 0xff00, 0x0000},  /* 10: 明るい緑 */
+    {0xff00, 0xff00, 0x0000},  /* 11: 明るい黄 */
+    {0x5c5c, 0x5c5c, 0xff00},  /* 12: 明るい青 */
+    {0xff00, 0x0000, 0xff00},  /* 13: 明るいマゼンタ */
+    {0x0000, 0xff00, 0xff00},  /* 14: 明るいシアン */
+    {0xffff, 0xffff, 0xffff},  /* 15: 明るい白 */
+};
+
+/* Xftカラーキャッシュ */
+static XftColor xft_color_cache[16];
+
 /**
  * ディスプレイを初期化する
  */
@@ -86,6 +111,17 @@ int display_init(int width, int height)
     XftColorAllocValue(g_display.display, visual, colormap, &xr_fg, &g_display.xft_fg);
     XftColorAllocValue(g_display.display, visual, colormap, &xr_bg, &g_display.xft_bg);
 
+    /* ANSI 16色を初期化 */
+    for (int i = 0; i < 16; i++) {
+        XRenderColor xr_color = {
+            ansi_colors[i].r,
+            ansi_colors[i].g,
+            ansi_colors[i].b,
+            0xffff
+        };
+        XftColorAllocValue(g_display.display, visual, colormap, &xr_color, &xft_color_cache[i]);
+    }
+
     printf("X11ディスプレイを初期化しました (%dx%d)\n", width, height);
 
     return 0;
@@ -109,6 +145,11 @@ void display_cleanup(void)
     Colormap colormap = DefaultColormap(g_display.display, g_display.screen);
     XftColorFree(g_display.display, visual, colormap, &g_display.xft_fg);
     XftColorFree(g_display.display, visual, colormap, &g_display.xft_bg);
+
+    /* ANSI色を解放 */
+    for (int i = 0; i < 16; i++) {
+        XftColorFree(g_display.display, visual, colormap, &xft_color_cache[i]);
+    }
 
     if (g_display.gc) {
         XFreeGC(g_display.display, g_display.gc);
@@ -237,9 +278,28 @@ void display_render_terminal(void)
 
             /* 描画位置を計算 */
             int px = x * char_width;
-            int py = y * char_height + g_font.ascent;
+            int py = y * char_height;
 
-            /* 文字を描画（現時点では白文字のみ） */
+            /* 色を取得 */
+            int fg_idx = cell->attr.fg_color & 0x0F;
+            int bg_idx = cell->attr.bg_color & 0x0F;
+
+            /* 反転属性を適用 */
+            if (cell->attr.flags & ATTR_REVERSE) {
+                int tmp = fg_idx;
+                fg_idx = bg_idx;
+                bg_idx = tmp;
+            }
+
+            /* 背景色を描画 */
+            if (bg_idx != 0) {  /* 背景が黒でない場合のみ描画 */
+                XSetForeground(g_display.display, g_display.gc,
+                              xft_color_cache[bg_idx].pixel);
+                XFillRectangle(g_display.display, g_display.window, g_display.gc,
+                              px, py, char_width, char_height);
+            }
+
+            /* 文字を描画 */
             if (cell->ch != ' ' && cell->ch != 0) {
                 char utf8[5];
                 int len = 0;
@@ -255,9 +315,21 @@ void display_render_terminal(void)
                 }
                 utf8[len] = '\0';
 
-                XftDrawStringUtf8(g_display.xft_draw, &g_display.xft_fg,
-                                 g_font.xft_font, px, py,
+                /* 前景色を選択 */
+                XftColor *fg_color = &xft_color_cache[fg_idx];
+
+                /* 文字を描画 */
+                XftDrawStringUtf8(g_display.xft_draw, fg_color,
+                                 g_font.xft_font, px, py + g_font.ascent,
                                  (FcChar8 *)utf8, len);
+
+                /* 下線を描画 */
+                if (cell->attr.flags & ATTR_UNDERLINE) {
+                    int uy = py + g_font.ascent + 1;
+                    XSetForeground(g_display.display, g_display.gc, fg_color->pixel);
+                    XDrawLine(g_display.display, g_display.window, g_display.gc,
+                             px, uy, px + char_width - 1, uy);
+                }
             }
         }
     }

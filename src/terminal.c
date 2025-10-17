@@ -11,6 +11,13 @@
 /* グローバルターミナルバッファ */
 TerminalBuffer g_terminal = {0};
 
+/* 現在の描画属性 */
+static CellAttr g_current_attr = {
+    .fg_color = 7,  /* 白 */
+    .bg_color = 0,  /* 黒 */
+    .flags = 0
+};
+
 /**
  * ターミナルバッファを初期化する
  */
@@ -182,16 +189,10 @@ void terminal_newline(void)
  */
 void terminal_put_char_at_cursor(uint32_t ch)
 {
-    CellAttr default_attr = {
-        .fg_color = 7,  /* 白 */
-        .bg_color = 0,  /* 黒 */
-        .flags = 0
-    };
-
     Cell *cell = terminal_get_cell(g_terminal.cursor_x, g_terminal.cursor_y);
     if (cell) {
         cell->ch = ch;
-        cell->attr = default_attr;
+        cell->attr = g_current_attr;  /* 現在の属性を使用 */
     }
 
     /* カーソルを右に進める */
@@ -357,7 +358,65 @@ static void handle_csi_command(char cmd, const char *param_buf)
 
         case 'm':  /* SGR: Select Graphic Rendition */
         {
-            /* 将来実装: 現在は無視 */
+            if (param_count == 0) {
+                /* パラメータなし: リセット */
+                g_current_attr.fg_color = 7;
+                g_current_attr.bg_color = 0;
+                g_current_attr.flags = 0;
+            } else {
+                for (int i = 0; i < param_count; i++) {
+                    int p = params[i];
+
+                    if (p == 0) {
+                        /* リセット */
+                        g_current_attr.fg_color = 7;
+                        g_current_attr.bg_color = 0;
+                        g_current_attr.flags = 0;
+                    } else if (p == 1) {
+                        /* 太字 */
+                        g_current_attr.flags |= ATTR_BOLD;
+                    } else if (p == 3) {
+                        /* イタリック */
+                        g_current_attr.flags |= ATTR_ITALIC;
+                    } else if (p == 4) {
+                        /* 下線 */
+                        g_current_attr.flags |= ATTR_UNDERLINE;
+                    } else if (p == 7) {
+                        /* 反転 */
+                        g_current_attr.flags |= ATTR_REVERSE;
+                    } else if (p == 22) {
+                        /* 太字解除 */
+                        g_current_attr.flags &= ~ATTR_BOLD;
+                    } else if (p == 23) {
+                        /* イタリック解除 */
+                        g_current_attr.flags &= ~ATTR_ITALIC;
+                    } else if (p == 24) {
+                        /* 下線解除 */
+                        g_current_attr.flags &= ~ATTR_UNDERLINE;
+                    } else if (p == 27) {
+                        /* 反転解除 */
+                        g_current_attr.flags &= ~ATTR_REVERSE;
+                    } else if (p >= 30 && p <= 37) {
+                        /* 前景色: 30-37 */
+                        g_current_attr.fg_color = p - 30;
+                    } else if (p == 39) {
+                        /* デフォルト前景色 */
+                        g_current_attr.fg_color = 7;
+                    } else if (p >= 40 && p <= 47) {
+                        /* 背景色: 40-47 */
+                        g_current_attr.bg_color = p - 40;
+                    } else if (p == 49) {
+                        /* デフォルト背景色 */
+                        g_current_attr.bg_color = 0;
+                    } else if (p >= 90 && p <= 97) {
+                        /* 明るい前景色: 90-97 */
+                        g_current_attr.fg_color = (p - 90) + 8;
+                    } else if (p >= 100 && p <= 107) {
+                        /* 明るい背景色: 100-107 */
+                        g_current_attr.bg_color = (p - 100) + 8;
+                    }
+                }
+            }
             break;
         }
 

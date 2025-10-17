@@ -5,6 +5,7 @@
 
 #include "input.h"
 #include "koteiterm.h"
+#include "terminal.h"
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
 #include <X11/Xutil.h>
@@ -82,11 +83,23 @@ bool input_handle_key(XKeyEvent *event)
 
         case XK_Page_Up:
         case XK_KP_Page_Up:
+            /* Shift+PageUp: スクロールアップ */
+            if (event->state & ShiftMask) {
+                extern TerminalBuffer g_terminal;
+                terminal_scroll_by(g_terminal.rows);
+                return true;
+            }
             pty_write("\x1B[5~", 4);  /* Page Up */
             return true;
 
         case XK_Page_Down:
         case XK_KP_Page_Down:
+            /* Shift+PageDown: スクロールダウン */
+            if (event->state & ShiftMask) {
+                extern TerminalBuffer g_terminal;
+                terminal_scroll_by(-g_terminal.rows);
+                return true;
+            }
             pty_write("\x1B[6~", 4);  /* Page Down */
             return true;
 

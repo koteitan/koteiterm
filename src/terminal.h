@@ -24,6 +24,20 @@ typedef struct {
     CellAttr attr;          /* 属性 */
 } Cell;
 
+/* スクロールバック行 */
+typedef struct {
+    Cell *cells;            /* セル配列 */
+    int cols;               /* この行の列数 */
+} ScrollbackLine;
+
+/* スクロールバックバッファ */
+typedef struct {
+    ScrollbackLine *lines;  /* 行配列 */
+    int capacity;           /* 最大行数 */
+    int count;              /* 現在の行数 */
+    int head;               /* リングバッファの先頭位置 */
+} ScrollbackBuffer;
+
 /* ターミナルバッファ */
 typedef struct {
     Cell *cells;            /* セル配列（rows * cols） */
@@ -32,6 +46,8 @@ typedef struct {
     int cursor_x;           /* カーソルX座標 */
     int cursor_y;           /* カーソルY座標 */
     bool cursor_visible;    /* カーソル表示 */
+    ScrollbackBuffer scrollback;  /* スクロールバック履歴 */
+    int scroll_offset;      /* スクロールオフセット（0=最下部） */
 } TerminalBuffer;
 
 /* グローバルターミナルバッファ */
@@ -123,5 +139,35 @@ void terminal_scroll_up(void);
  * @return 成功時0、失敗時-1
  */
 int terminal_resize(int new_rows, int new_cols);
+
+/**
+ * スクロールアップ（行数指定）
+ * @param lines スクロールする行数
+ */
+void terminal_scroll_by(int lines);
+
+/**
+ * スクロールオフセットを設定
+ * @param offset オフセット（0=最下部）
+ */
+void terminal_set_scroll_offset(int offset);
+
+/**
+ * スクロールオフセットを取得
+ * @return 現在のスクロールオフセット
+ */
+int terminal_get_scroll_offset(void);
+
+/**
+ * 最下部までスクロール
+ */
+void terminal_scroll_to_bottom(void);
+
+/**
+ * スクロールバックから指定行を取得
+ * @param line_index スクロールバック内の行インデックス（0=最古）
+ * @return 行へのポインタ、範囲外の場合NULL
+ */
+ScrollbackLine *terminal_get_scrollback_line(int line_index);
 
 #endif /* TERMINAL_H */

@@ -36,6 +36,18 @@ int terminal_init(int rows, int cols)
     g_terminal.cursor_y = 0;
     g_terminal.cursor_visible = true;
 
+    /* スクロールバックバッファを初期化 */
+    g_terminal.scrollback.capacity = 1000;  /* 1000行の履歴 */
+    g_terminal.scrollback.count = 0;
+    g_terminal.scrollback.head = 0;
+    g_terminal.scrollback.lines = calloc(g_terminal.scrollback.capacity, sizeof(ScrollbackLine));
+    if (!g_terminal.scrollback.lines) {
+        fprintf(stderr, "エラー: スクロールバックバッファのメモリ確保に失敗しました\n");
+        free(g_terminal.cells);
+        return -1;
+    }
+    g_terminal.scroll_offset = 0;  /* 最下部から開始 */
+
     /* 初期化: 空白で埋める */
     CellAttr default_attr = {
         .fg_color = 7,  /* 白 */
@@ -61,6 +73,18 @@ void terminal_cleanup(void)
     if (g_terminal.cells) {
         free(g_terminal.cells);
         g_terminal.cells = NULL;
+    }
+
+    /* スクロールバックバッファをクリーンアップ */
+    if (g_terminal.scrollback.lines) {
+        for (int i = 0; i < g_terminal.scrollback.count; i++) {
+            int idx = (g_terminal.scrollback.head + i) % g_terminal.scrollback.capacity;
+            if (g_terminal.scrollback.lines[idx].cells) {
+                free(g_terminal.scrollback.lines[idx].cells);
+            }
+        }
+        free(g_terminal.scrollback.lines);
+        g_terminal.scrollback.lines = NULL;
     }
 
     memset(&g_terminal, 0, sizeof(g_terminal));
@@ -143,7 +167,36 @@ void terminal_get_cursor(int *x, int *y)
  */
 void terminal_scroll_up(void)
 {
-    /* 最初の行を削除、全ての行を1行上に移動 */
+    /* 最初の行をスクロールバックバッファに保存 */
+    if (g_terminal.scrollback.lines) {
+        /* リングバッファの次の位置を計算 */
+        int write_idx;
+        if (g_terminal.scrollback.count < g_terminal.scrollback.capacity) {
+            /* まだ容量に余裕がある */
+            write_idx = g_terminal.scrollback.count;
+            g_terminal.scrollback.count++;
+        } else {
+            /* 容量いっぱい、最古の行を上書き */
+            write_idx = g_terminal.scrollback.head;
+            g_terminal.scrollback.head = (g_terminal.scrollback.head + 1) % g_terminal.scrollback.capacity;
+
+            /* 既存の行のメモリを解放 */
+            if (g_terminal.scrollback.lines[write_idx].cells) {
+                free(g_terminal.scrollback.lines[write_idx].cells);
+            }
+        }
+
+        /* 最初の行をコピー */
+        g_terminal.scrollback.lines[write_idx].cols = g_terminal.cols;
+        g_terminal.scrollback.lines[write_idx].cells = malloc(g_terminal.cols * sizeof(Cell));
+        if (g_terminal.scrollback.lines[write_idx].cells) {
+            memcpy(g_terminal.scrollback.lines[write_idx].cells,
+                   g_terminal.cells,
+                   g_terminal.cols * sizeof(Cell));
+        }
+    }
+
+    /* 全ての行を1行上に移動 */
     int line_size = g_terminal.cols * sizeof(Cell);
     memmove(g_terminal.cells,
             g_terminal.cells + g_terminal.cols,
@@ -160,6 +213,11 @@ void terminal_scroll_up(void)
     for (int x = 0; x < g_terminal.cols; x++) {
         g_terminal.cells[last_row_start + x].ch = ' ';
         g_terminal.cells[last_row_start + x].attr = default_attr;
+    }
+
+    /* 新しい出力があったらスクロールオフセットをリセット（最下部に移動） */
+    if (g_terminal.scroll_offset == 0) {
+        /* すでに最下部にいる場合は何もしない（自動スクロール） */
     }
 }
 
@@ -562,4 +620,67 @@ void terminal_write(const char *data, size_t size)
                 break;
         }
     }
+}
+
+/**
+ * スクロールアップ（行数指定）
+ */
+void terminal_scroll_by(int lines)
+{
+    g_terminal.scroll_offset += lines;
+
+    /* 範囲チェック */
+    int max_offset = g_terminal.scrollback.count;
+    if (g_terminal.scroll_offset > max_offset) {
+        g_terminal.scroll_offset = max_offset;
+    }
+    if (g_terminal.scroll_offset < 0) {
+        g_terminal.scroll_offset = 0;
+    }
+}
+
+/**
+ * スクロールオフセットを設定
+ */
+void terminal_set_scroll_offset(int offset)
+{
+    g_terminal.scroll_offset = offset;
+
+    /* 範囲チェック */
+    int max_offset = g_terminal.scrollback.count;
+    if (g_terminal.scroll_offset > max_offset) {
+        g_terminal.scroll_offset = max_offset;
+    }
+    if (g_terminal.scroll_offset < 0) {
+        g_terminal.scroll_offset = 0;
+    }
+}
+
+/**
+ * スクロールオフセットを取得
+ */
+int terminal_get_scroll_offset(void)
+{
+    return g_terminal.scroll_offset;
+}
+
+/**
+ * 最下部までスクロール
+ */
+void terminal_scroll_to_bottom(void)
+{
+    g_terminal.scroll_offset = 0;
+}
+
+/**
+ * スクロールバックから指定行を取得
+ */
+ScrollbackLine *terminal_get_scrollback_line(int line_index)
+{
+    if (line_index < 0 || line_index >= g_terminal.scrollback.count) {
+        return NULL;
+    }
+
+    int idx = (g_terminal.scrollback.head + line_index) % g_terminal.scrollback.capacity;
+    return &g_terminal.scrollback.lines[idx];
 }

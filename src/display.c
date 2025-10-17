@@ -235,7 +235,15 @@ bool display_handle_events(void)
                 break;
 
             case ButtonPress:
-                /* マウスボタン押下（将来実装） */
+                /* マウスホイール: Button4=上, Button5=下 */
+                if (event.xbutton.button == Button4) {
+                    /* 上スクロール */
+                    terminal_scroll_by(3);  /* 3行ずつスクロール */
+                } else if (event.xbutton.button == Button5) {
+                    /* 下スクロール */
+                    terminal_scroll_by(-3);  /* 3行ずつスクロール */
+                }
+                /* その他のボタンは将来実装 */
                 break;
 
             default:
@@ -291,10 +299,36 @@ void display_render_terminal(void)
     int char_width = font_get_char_width();
     int char_height = font_get_char_height();
 
+    int scroll_offset = terminal_get_scroll_offset();
+
     /* 全てのセルを描画 */
     for (int y = 0; y < g_terminal.rows; y++) {
         for (int x = 0; x < g_terminal.cols; x++) {
-            Cell *cell = terminal_get_cell(x, y);
+            Cell *cell = NULL;
+
+            /* スクロールオフセットを考慮してセルを取得 */
+            if (scroll_offset > 0) {
+                /* スクロールバックバッファから取得 */
+                int scrollback_line_idx = g_terminal.scrollback.count - scroll_offset + y;
+
+                if (scrollback_line_idx >= 0 && scrollback_line_idx < g_terminal.scrollback.count) {
+                    /* スクロールバックバッファから */
+                    ScrollbackLine *line = terminal_get_scrollback_line(scrollback_line_idx);
+                    if (line && line->cells && x < line->cols) {
+                        cell = &line->cells[x];
+                    }
+                } else if (scrollback_line_idx >= g_terminal.scrollback.count) {
+                    /* 通常バッファから */
+                    int buffer_y = scrollback_line_idx - g_terminal.scrollback.count;
+                    if (buffer_y >= 0 && buffer_y < g_terminal.rows) {
+                        cell = terminal_get_cell(x, buffer_y);
+                    }
+                }
+            } else {
+                /* スクロールオフセットなし：通常バッファから */
+                cell = terminal_get_cell(x, y);
+            }
+
             if (!cell) {
                 continue;
             }

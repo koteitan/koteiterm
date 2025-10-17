@@ -65,6 +65,44 @@ static int utf8_decode(const unsigned char *data, size_t size, uint32_t *codepoi
     return 0;
 }
 
+/* 文字幅を取得（East Asian Width） */
+static int get_char_width(uint32_t ch)
+{
+    /* ASCII範囲 */
+    if (ch < 0x7F) {
+        return 1;
+    }
+
+    /* 全角文字の範囲を判定 */
+    if ((ch >= 0x1100 && ch <= 0x115F) ||   /* ハングル */
+        (ch >= 0x2E80 && ch <= 0x2EFF) ||   /* CJK部首補助 */
+        (ch >= 0x2F00 && ch <= 0x2FDF) ||   /* 康熙部首 */
+        (ch >= 0x3000 && ch <= 0x303F) ||   /* CJK記号・句読点 */
+        (ch >= 0x3040 && ch <= 0x309F) ||   /* ひらがな */
+        (ch >= 0x30A0 && ch <= 0x30FF) ||   /* カタカナ */
+        (ch >= 0x3100 && ch <= 0x312F) ||   /* 注音符号 */
+        (ch >= 0x3130 && ch <= 0x318F) ||   /* ハングル互換字母 */
+        (ch >= 0x3190 && ch <= 0x319F) ||   /* 漢文用記号 */
+        (ch >= 0x31A0 && ch <= 0x31BF) ||   /* 注音符号拡張 */
+        (ch >= 0x31C0 && ch <= 0x31EF) ||   /* CJK筆画 */
+        (ch >= 0x3200 && ch <= 0x32FF) ||   /* 囲み文字 */
+        (ch >= 0x3300 && ch <= 0x33FF) ||   /* CJK互換 */
+        (ch >= 0x3400 && ch <= 0x4DBF) ||   /* CJK統合漢字拡張A */
+        (ch >= 0x4E00 && ch <= 0x9FFF) ||   /* CJK統合漢字 */
+        (ch >= 0xAC00 && ch <= 0xD7AF) ||   /* ハングル音節 */
+        (ch >= 0xF900 && ch <= 0xFAFF) ||   /* CJK互換漢字 */
+        (ch >= 0xFE30 && ch <= 0xFE4F) ||   /* CJK互換形式 */
+        (ch >= 0xFF00 && ch <= 0xFF60) ||   /* 全角ASCII、全角記号 */
+        (ch >= 0xFFE0 && ch <= 0xFFE6) ||   /* 全角記号 */
+        (ch >= 0x20000 && ch <= 0x2FFFD) || /* CJK統合漢字拡張B-F */
+        (ch >= 0x30000 && ch <= 0x3FFFD)) { /* CJK統合漢字拡張G */
+        return 2;
+    }
+
+    /* その他は半角 */
+    return 1;
+}
+
 /**
  * ターミナルバッファを初期化する
  */
@@ -356,14 +394,25 @@ void terminal_newline(void)
  */
 void terminal_put_char_at_cursor(uint32_t ch)
 {
+    int char_width = get_char_width(ch);
+
     Cell *cell = terminal_get_cell(g_terminal.cursor_x, g_terminal.cursor_y);
     if (cell) {
         cell->ch = ch;
         cell->attr = g_current_attr;  /* 現在の属性を使用 */
     }
 
-    /* カーソルを右に進める */
-    g_terminal.cursor_x++;
+    /* 全角文字の場合、次のセルに継続マーカーを設定 */
+    if (char_width == 2 && g_terminal.cursor_x + 1 < g_terminal.cols) {
+        Cell *next_cell = terminal_get_cell(g_terminal.cursor_x + 1, g_terminal.cursor_y);
+        if (next_cell) {
+            next_cell->ch = WIDE_CHAR_CONTINUATION;
+            next_cell->attr = g_current_attr;
+        }
+    }
+
+    /* カーソルを文字幅分進める */
+    g_terminal.cursor_x += char_width;
     if (g_terminal.cursor_x >= g_terminal.cols) {
         /* 行末に達したら次の行へ */
         g_terminal.cursor_x = 0;

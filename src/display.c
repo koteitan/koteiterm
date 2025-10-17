@@ -379,6 +379,11 @@ void display_render_terminal(void)
                 bg_idx = tmp;
             }
 
+            /* WIDE_CHAR_CONTINUATIONはスキップ（全角文字の2セル目） */
+            if (cell->ch == WIDE_CHAR_CONTINUATION) {
+                continue;
+            }
+
             /* 背景色を描画 */
             if (bg_idx != 0) {  /* 背景が黒でない場合のみ描画 */
                 XSetForeground(g_display.display, g_display.gc,

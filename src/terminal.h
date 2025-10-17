@@ -18,6 +18,9 @@ typedef struct {
 #define ATTR_UNDERLINE (1 << 2)
 #define ATTR_REVERSE   (1 << 3)
 
+/* 特殊文字コード */
+#define WIDE_CHAR_CONTINUATION 0xFFFFFFFE  /* 全角文字の2セル目 */
+
 /* 文字セル */
 typedef struct {
     uint32_t ch;            /* Unicode文字 */

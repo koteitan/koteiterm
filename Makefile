@@ -2,11 +2,12 @@
 
 # コンパイラとフラグ
 CC = gcc
-CFLAGS = -Wall -Wextra -Werror -std=c11 -pedantic -g -O2
+CFLAGS = -Wall -Wextra -Werror -std=gnu11 -g -O2
 CFLAGS += -Iinclude
 
-# 将来のライブラリ依存（現時点ではコメントアウト）
-# LDFLAGS = -lX11 -lXft -lutil -lfontconfig
+# ライブラリ依存
+LDFLAGS = -lX11
+# 将来追加予定: -lXft -lutil -lfontconfig
 
 # ディレクトリ
 SRCDIR = src
@@ -37,7 +38,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # ヘッダ依存関係
-$(OBJECTS): $(INCDIR)/koteiterm.h
+$(OBJECTS): $(INCDIR)/koteiterm.h $(wildcard $(SRCDIR)/*.h)
 
 # クリーンアップ
 .PHONY: clean

@@ -19,6 +19,8 @@
 #define DEFAULT_SCROLLBACK 1000
 #define DEFAULT_FONT "monospace"
 #define DEFAULT_FONT_SIZE 12
+#define DEFAULT_WINDOW_WIDTH 800
+#define DEFAULT_WINDOW_HEIGHT 600
 
 /* 色定義（ANSI 16色） */
 typedef struct {
@@ -44,10 +46,12 @@ extern TerminalState g_term;
 /* main.c */
 void cleanup(void);
 
-/* display.c（将来実装） */
-// int display_init(void);
-// void display_cleanup(void);
-// void display_draw(void);
+/* display.c */
+int display_init(int width, int height);
+void display_cleanup(void);
+bool display_handle_events(void);
+void display_clear(void);
+void display_flush(void);
 
 /* pty.c（将来実装） */
 // int pty_init(void);

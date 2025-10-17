@@ -35,6 +35,12 @@ static int init(void)
     printf("koteiterm v%s を初期化しています...\n", KOTEITERM_VERSION);
     printf("ターミナルサイズ: %dx%d\n", g_term.cols, g_term.rows);
 
+    /* ディスプレイの初期化 */
+    if (display_init(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT) != 0) {
+        fprintf(stderr, "ディスプレイの初期化に失敗しました\n");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -43,17 +49,31 @@ void cleanup(void)
 {
     printf("koteiterm をクリーンアップしています...\n");
 
-    /* 将来: display_cleanup(), pty_cleanup(), terminal_cleanup() */
+    /* ディスプレイのクリーンアップ */
+    display_cleanup();
+
+    /* 将来: pty_cleanup(), terminal_cleanup() */
 }
 
 /* メインループ */
 static void main_loop(void)
 {
-    printf("メインループを開始します（Ctrl+Cで終了）\n");
+    printf("メインループを開始します（ウィンドウを閉じるかCtrl+Cで終了）\n");
 
-    /* 現時点では何もせずに待機 */
+    /* イベントループ */
     while (g_term.running) {
-        sleep(1);
+        /* X11イベントを処理 */
+        if (!display_handle_events()) {
+            /* ウィンドウが閉じられた */
+            g_term.running = false;
+            break;
+        }
+
+        /* 描画処理（将来実装） */
+        /* 現時点では何も描画しない */
+
+        /* CPUを使いすぎないように少し待機 */
+        usleep(16666);  /* 約60 FPS */
     }
 }
 

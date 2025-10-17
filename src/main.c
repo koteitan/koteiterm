@@ -141,6 +141,28 @@ static void print_usage(const char *prog_name)
     printf("  -h, --help     このヘルプメッセージを表示\n");
     printf("  -v, --version  バージョン情報を表示\n");
     printf("\n");
+    printf("キーボード操作:\n");
+    printf("  Shift+PageUp       上にスクロール（1画面分）\n");
+    printf("  Shift+PageDown     下にスクロール（1画面分）\n");
+    printf("  矢印キー           カーソル移動\n");
+    printf("  Ctrl+C             割り込み\n");
+    printf("  Ctrl+D             EOF（終了）\n");
+    printf("\n");
+    printf("マウス操作:\n");
+    printf("  左ボタンドラッグ   テキスト選択\n");
+    printf("  中ボタンクリック   貼り付け（PRIMARY選択）\n");
+    printf("  マウスホイール上   上にスクロール（3行）\n");
+    printf("  マウスホイール下   下にスクロール（3行）\n");
+    printf("\n");
+    printf("機能:\n");
+    printf("  - VT100/ANSI完全互換\n");
+    printf("  - 256色対応\n");
+    printf("  - UTF-8/日本語表示\n");
+    printf("  - 全角文字対応（2セル幅）\n");
+    printf("  - スクロールバック履歴（1000行）\n");
+    printf("  - 代替スクリーンバッファ（vim、less等に対応）\n");
+    printf("  - マウス選択とクリップボード連携\n");
+    printf("\n");
 }
 
 /* メイン関数 */

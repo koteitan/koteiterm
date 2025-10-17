@@ -17,6 +17,8 @@ DisplayState g_display = {0};
 
 /* マウス選択状態 */
 static bool mouse_selecting = false;
+static int selection_start_x = 0;
+static int selection_start_y = 0;
 
 /* クリップボード用の選択テキスト */
 static char *selection_text = NULL;
@@ -350,6 +352,11 @@ bool display_handle_events(void)
                     int char_height = font_get_char_height();
                     int x = event.xbutton.x / char_width;
                     int y = event.xbutton.y / char_height;
+
+                    /* 開始位置を記録 */
+                    selection_start_x = x;
+                    selection_start_y = y;
+
                     terminal_selection_start(x, y);
                     mouse_selecting = true;
                 }
@@ -357,18 +364,36 @@ bool display_handle_events(void)
 
             case ButtonRelease:
                 if (event.xbutton.button == Button1 && mouse_selecting) {
-                    /* 選択終了 */
-                    terminal_selection_end();
-                    mouse_selecting = false;
+                    /* 終了位置を計算 */
+                    int char_width = font_get_char_width();
+                    int char_height = font_get_char_height();
+                    int end_x = event.xbutton.x / char_width;
+                    int end_y = event.xbutton.y / char_height;
 
-                    /* 選択されたテキストをPRIMARY選択にコピー */
-                    if (selection_text) {
-                        free(selection_text);
-                    }
-                    selection_text = terminal_get_selected_text();
-                    if (selection_text) {
-                        XSetSelectionOwner(g_display.display, XA_PRIMARY,
-                                          g_display.window, CurrentTime);
+                    /* ドラッグしていない場合（開始位置と終了位置が同じ）は選択をクリア */
+                    if (end_x == selection_start_x && end_y == selection_start_y) {
+                        terminal_selection_clear();
+                        mouse_selecting = false;
+
+                        /* 選択テキストもクリア */
+                        if (selection_text) {
+                            free(selection_text);
+                            selection_text = NULL;
+                        }
+                    } else {
+                        /* ドラッグした場合は選択を確定 */
+                        terminal_selection_end();
+                        mouse_selecting = false;
+
+                        /* 選択されたテキストをPRIMARY選択にコピー */
+                        if (selection_text) {
+                            free(selection_text);
+                        }
+                        selection_text = terminal_get_selected_text();
+                        if (selection_text) {
+                            XSetSelectionOwner(g_display.display, XA_PRIMARY,
+                                              g_display.window, CurrentTime);
+                        }
                     }
                 } else if (event.xbutton.button == Button2) {
                     /* 中ボタン: 貼り付け */

@@ -2,6 +2,8 @@
 
 シンプルなLinuxターミナルエミュレータ
 
+<video src="https://v.nostr.build/D4LjcHjpjYlZ5MPC.mp4" controls></video>
+
 ## 概要
 
 koteitermは、X11とXftを使用したC言語製のターミナルエミュレータです。VT100エスケープシーケンス、ANSI 16色、UTF-8/日本語表示、Nerd Fontsアイコンをサポートしています。

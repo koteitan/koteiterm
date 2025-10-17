@@ -603,10 +603,10 @@ void display_render_terminal(void)
         int cx = g_terminal.cursor_x * char_width;
         int cy = g_terminal.cursor_y * char_height;
 
-        /* カーソルを白い矩形として描画 */
+        /* カーソルを白い下線として描画（文字セルの下部） */
         XSetForeground(g_display.display, g_display.gc,
                       WhitePixel(g_display.display, g_display.screen));
         XFillRectangle(g_display.display, g_display.window, g_display.gc,
-                      cx, cy, char_width, 2);  /* 下線カーソル */
+                      cx, cy + char_height - 2, char_width, 2);  /* 下線カーソル */
     }
 }

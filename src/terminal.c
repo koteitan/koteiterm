@@ -686,16 +686,70 @@ static void handle_csi_command(char cmd, const char *param_buf)
                         /* 明るい背景色: 100-107 */
                         g_current_attr.bg_color = (p - 100) + 8;
                     } else if (p == 38 && i + 2 < param_count) {
-                        /* 256色前景色: 38;5;N */
-                        if (params[i + 1] == 5) {
+                        /* 前景色: 256色または24-bit RGB */
+                        if (params[i + 1] == 5 && i + 2 < param_count) {
+                            /* 256色前景色: 38;5;N */
                             g_current_attr.fg_color = params[i + 2];
                             i += 2;  /* パラメータ2つ分スキップ */
+                        } else if (params[i + 1] == 2 && i + 4 < param_count) {
+                            /* 24-bit RGB前景色: 38;2;R;G;B */
+                            /* RGBを256色パレットに変換 */
+                            int r = params[i + 2];
+                            int g = params[i + 3];
+                            int b = params[i + 4];
+
+                            /* グレースケールの場合 */
+                            if (r == g && g == b) {
+                                if (r < 8) {
+                                    g_current_attr.fg_color = 0;  /* 黒 */
+                                } else if (r > 238) {
+                                    g_current_attr.fg_color = 15;  /* 白 */
+                                } else {
+                                    /* グレースケール: 232-255 */
+                                    g_current_attr.fg_color = 232 + (r - 8) / 10;
+                                }
+                            } else {
+                                /* 216色キューブ: 16 + 36*r + 6*g + b */
+                                int r6 = (r * 6) / 256;
+                                int g6 = (g * 6) / 256;
+                                int b6 = (b * 6) / 256;
+                                g_current_attr.fg_color = 16 + 36 * r6 + 6 * g6 + b6;
+                            }
+
+                            i += 4;  /* パラメータ4つ分スキップ */
                         }
                     } else if (p == 48 && i + 2 < param_count) {
-                        /* 256色背景色: 48;5;N */
-                        if (params[i + 1] == 5) {
+                        /* 背景色: 256色または24-bit RGB */
+                        if (params[i + 1] == 5 && i + 2 < param_count) {
+                            /* 256色背景色: 48;5;N */
                             g_current_attr.bg_color = params[i + 2];
                             i += 2;  /* パラメータ2つ分スキップ */
+                        } else if (params[i + 1] == 2 && i + 4 < param_count) {
+                            /* 24-bit RGB背景色: 48;2;R;G;B */
+                            /* RGBを256色パレットに変換 */
+                            int r = params[i + 2];
+                            int g = params[i + 3];
+                            int b = params[i + 4];
+
+                            /* グレースケールの場合 */
+                            if (r == g && g == b) {
+                                if (r < 8) {
+                                    g_current_attr.bg_color = 0;  /* 黒 */
+                                } else if (r > 238) {
+                                    g_current_attr.bg_color = 15;  /* 白 */
+                                } else {
+                                    /* グレースケール: 232-255 */
+                                    g_current_attr.bg_color = 232 + (r - 8) / 10;
+                                }
+                            } else {
+                                /* 216色キューブ: 16 + 36*r + 6*g + b */
+                                int r6 = (r * 6) / 256;
+                                int g6 = (g * 6) / 256;
+                                int b6 = (b * 6) / 256;
+                                g_current_attr.bg_color = 16 + 36 * r6 + 6 * g6 + b6;
+                            }
+
+                            i += 4;  /* パラメータ4つ分スキップ */
                         }
                     }
                 }

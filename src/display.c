@@ -6,6 +6,7 @@
 #include "display.h"
 #include "font.h"
 #include "terminal.h"
+#include "input.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -165,7 +166,8 @@ bool display_handle_events(void)
                 break;
 
             case KeyPress:
-                /* キー入力（将来実装） */
+                /* キー入力を処理 */
+                input_handle_key(&event.xkey);
                 break;
 
             case ButtonPress:

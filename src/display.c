@@ -4,6 +4,8 @@
  */
 
 #include "display.h"
+#include "font.h"
+#include "terminal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +66,25 @@ int display_init(int width, int height)
     XMapWindow(g_display.display, g_display.window);
     XFlush(g_display.display);
 
+    /* Xft描画コンテキストを作成 */
+    Visual *visual = DefaultVisual(g_display.display, g_display.screen);
+    Colormap colormap = DefaultColormap(g_display.display, g_display.screen);
+
+    g_display.xft_draw = XftDrawCreate(g_display.display, g_display.window,
+                                       visual, colormap);
+    if (!g_display.xft_draw) {
+        fprintf(stderr, "エラー: XftDraw の作成に失敗しました\n");
+        XDestroyWindow(g_display.display, g_display.window);
+        XCloseDisplay(g_display.display);
+        return -1;
+    }
+
+    /* デフォルト色を設定（白の前景、黒の背景） */
+    XRenderColor xr_fg = {0xffff, 0xffff, 0xffff, 0xffff};  /* 白 */
+    XRenderColor xr_bg = {0x0000, 0x0000, 0x0000, 0xffff};  /* 黒 */
+    XftColorAllocValue(g_display.display, visual, colormap, &xr_fg, &g_display.xft_fg);
+    XftColorAllocValue(g_display.display, visual, colormap, &xr_bg, &g_display.xft_bg);
+
     printf("X11ディスプレイを初期化しました (%dx%d)\n", width, height);
 
     return 0;
@@ -77,6 +98,16 @@ void display_cleanup(void)
     if (!g_display.display) {
         return;
     }
+
+    /* Xft リソースをクリーンアップ */
+    if (g_display.xft_draw) {
+        XftDrawDestroy(g_display.xft_draw);
+    }
+
+    Visual *visual = DefaultVisual(g_display.display, g_display.screen);
+    Colormap colormap = DefaultColormap(g_display.display, g_display.screen);
+    XftColorFree(g_display.display, visual, colormap, &g_display.xft_fg);
+    XftColorFree(g_display.display, visual, colormap, &g_display.xft_bg);
 
     if (g_display.gc) {
         XFreeGC(g_display.display, g_display.gc);
@@ -173,4 +204,59 @@ void display_flush(void)
     }
 
     XFlush(g_display.display);
+}
+
+/**
+ * ターミナルバッファの内容を描画する
+ */
+void display_render_terminal(void)
+{
+    if (!g_display.display || !g_display.xft_draw) {
+        return;
+    }
+
+    extern FontState g_font;
+    extern TerminalBuffer g_terminal;
+
+    if (!g_font.xft_font) {
+        return;
+    }
+
+    int char_width = font_get_char_width();
+    int char_height = font_get_char_height();
+
+    /* 全てのセルを描画 */
+    for (int y = 0; y < g_terminal.rows; y++) {
+        for (int x = 0; x < g_terminal.cols; x++) {
+            Cell *cell = terminal_get_cell(x, y);
+            if (!cell) {
+                continue;
+            }
+
+            /* 描画位置を計算 */
+            int px = x * char_width;
+            int py = y * char_height + g_font.ascent;
+
+            /* 文字を描画（現時点では白文字のみ） */
+            if (cell->ch != ' ' && cell->ch != 0) {
+                char utf8[5];
+                int len = 0;
+
+                /* Unicode を UTF-8 に変換（簡易版：ASCII のみ） */
+                if (cell->ch < 0x80) {
+                    utf8[0] = (char)cell->ch;
+                    len = 1;
+                } else {
+                    /* 将来: 完全なUTF-8変換を実装 */
+                    utf8[0] = '?';
+                    len = 1;
+                }
+                utf8[len] = '\0';
+
+                XftDrawStringUtf8(g_display.xft_draw, &g_display.xft_fg,
+                                 g_font.xft_font, px, py,
+                                 (FcChar8 *)utf8, len);
+            }
+        }
+    }
 }

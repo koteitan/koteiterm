@@ -4,10 +4,10 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -Werror -std=gnu11 -g -O2
 CFLAGS += -Iinclude
+CFLAGS += $(shell pkg-config --cflags freetype2)
 
 # ライブラリ依存
-LDFLAGS = -lX11 -lutil
-# 将来追加予定: -lXft -lfontconfig
+LDFLAGS = -lX11 -lXft -lfontconfig -lutil
 
 # ディレクトリ
 SRCDIR = src

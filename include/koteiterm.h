@@ -61,9 +61,20 @@ ssize_t pty_write(const char *data, size_t size);
 int pty_resize(int rows, int cols);
 bool pty_is_child_running(void);
 
-/* terminal.c（将来実装） */
-// int terminal_init(int rows, int cols);
-// void terminal_cleanup(void);
+/* terminal.c */
+int terminal_init(int rows, int cols);
+void terminal_cleanup(void);
+void terminal_put_char(int x, int y, uint32_t ch, void *attr);
+void terminal_clear(void);
+
+/* font.c */
+int font_init(void *display, int screen, const char *font_name, int font_size);
+void font_cleanup(void *display);
+int font_get_char_width(void);
+int font_get_char_height(void);
+
+/* display.c - additional */
+void display_render_terminal(void);
 
 /* input.c（将来実装） */
 // void input_handle(void);

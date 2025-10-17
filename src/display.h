@@ -2,6 +2,7 @@
 #define DISPLAY_H
 
 #include <X11/Xlib.h>
+#include <X11/Xft/Xft.h>
 #include <stdbool.h>
 
 /* ディスプレイ状態 */
@@ -13,6 +14,9 @@ typedef struct {
     int width;               /* ウィンドウ幅 */
     int height;              /* ウィンドウ高さ */
     Atom wm_delete_window;   /* ウィンドウ削除メッセージ */
+    XftDraw *xft_draw;       /* Xft描画コンテキスト */
+    XftColor xft_fg;         /* 前景色 */
+    XftColor xft_bg;         /* 背景色 */
 } DisplayState;
 
 /* グローバルディスプレイ状態 */
@@ -48,5 +52,10 @@ void display_clear(void);
  * 画面を更新する（バッファをフラッシュ）
  */
 void display_flush(void);
+
+/**
+ * ターミナルバッファの内容を描画する
+ */
+void display_render_terminal(void);
 
 #endif /* DISPLAY_H */

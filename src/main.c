@@ -4,6 +4,7 @@
  */
 
 #include "koteiterm.h"
+#include "display.h"
 #include <signal.h>
 #include <unistd.h>
 
@@ -41,9 +42,33 @@ static int init(void)
         return -1;
     }
 
+    /* フォントの初期化 */
+    extern DisplayState g_display;
+    if (font_init(g_display.display, g_display.screen, DEFAULT_FONT, DEFAULT_FONT_SIZE) != 0) {
+        fprintf(stderr, "フォントの初期化に失敗しました\n");
+        display_cleanup();
+        return -1;
+    }
+
+    /* ターミナルバッファの初期化 */
+    if (terminal_init(g_term.rows, g_term.cols) != 0) {
+        fprintf(stderr, "ターミナルバッファの初期化に失敗しました\n");
+        font_cleanup(g_display.display);
+        display_cleanup();
+        return -1;
+    }
+
+    /* テスト: いくつかの文字を書き込む */
+    const char *test_msg = "Hello, koteiterm!";
+    for (int i = 0; test_msg[i] != '\0' && i < g_term.cols; i++) {
+        terminal_put_char(i, 0, test_msg[i], NULL);
+    }
+
     /* PTYの初期化とシェル起動 */
     if (pty_init(g_term.rows, g_term.cols) != 0) {
         fprintf(stderr, "PTYの初期化に失敗しました\n");
+        terminal_cleanup();
+        font_cleanup(g_display.display);
         display_cleanup();
         return -1;
     }
@@ -54,15 +79,23 @@ static int init(void)
 /* クリーンアップ処理 */
 void cleanup(void)
 {
+    extern DisplayState g_display;
+
     printf("koteiterm をクリーンアップしています...\n");
 
     /* PTYのクリーンアップ */
     pty_cleanup();
 
+    /* ターミナルバッファのクリーンアップ */
+    terminal_cleanup();
+
+    /* フォントのクリーンアップ */
+    if (g_display.display) {
+        font_cleanup(g_display.display);
+    }
+
     /* ディスプレイのクリーンアップ */
     display_cleanup();
-
-    /* 将来: terminal_cleanup() */
 }
 
 /* メインループ */
@@ -97,8 +130,10 @@ static void main_loop(void)
             break;
         }
 
-        /* 描画処理（将来実装） */
-        /* 現時点では何も描画しない */
+        /* 描画処理 */
+        display_clear();
+        display_render_terminal();
+        display_flush();
 
         /* CPUを使いすぎないように少し待機 */
         usleep(16666);  /* 約60 FPS */

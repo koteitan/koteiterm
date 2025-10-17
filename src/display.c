@@ -37,8 +37,63 @@ static const struct {
     {0xffff, 0xffff, 0xffff},  /* 15: 明るい白 */
 };
 
-/* Xftカラーキャッシュ */
-static XftColor xft_color_cache[16];
+/* Xftカラーキャッシュ（256色対応） */
+static XftColor xft_color_cache[256];
+static bool color_initialized[256] = {false};
+
+/**
+ * 256色インデックスをRGB値に変換
+ * @param idx 色インデックス (0-255)
+ * @param r, g, b 出力RGB値 (0-65535)
+ */
+static void color_256_to_rgb(uint8_t idx, unsigned short *r, unsigned short *g, unsigned short *b)
+{
+    if (idx < 16) {
+        /* ANSI 16色 */
+        *r = ansi_colors[idx].r;
+        *g = ansi_colors[idx].g;
+        *b = ansi_colors[idx].b;
+    } else if (idx < 232) {
+        /* 6x6x6 RGB色空間 (216色) */
+        int color_idx = idx - 16;
+        int r_level = (color_idx / 36) % 6;
+        int g_level = (color_idx / 6) % 6;
+        int b_level = color_idx % 6;
+
+        /* 各レベル (0-5) を 0x0000-0xFFFF に変換 */
+        const unsigned short levels[6] = {0x0000, 0x5F5F, 0x8787, 0xAFAF, 0xD7D7, 0xFFFF};
+        *r = levels[r_level];
+        *g = levels[g_level];
+        *b = levels[b_level];
+    } else {
+        /* グレースケール (24段階) */
+        int gray_idx = idx - 232;
+        unsigned short gray = 0x0808 + (gray_idx * 0x0A0A);
+        *r = *g = *b = gray;
+    }
+}
+
+/**
+ * 色を取得（必要に応じて初期化）
+ * @param idx 色インデックス (0-255)
+ * @return XftColorへのポインタ
+ */
+static XftColor *get_color(uint8_t idx)
+{
+    if (!color_initialized[idx]) {
+        unsigned short r, g, b;
+        color_256_to_rgb(idx, &r, &g, &b);
+
+        XRenderColor xr_color = {r, g, b, 0xffff};
+        Visual *visual = DefaultVisual(g_display.display, g_display.screen);
+        Colormap colormap = DefaultColormap(g_display.display, g_display.screen);
+
+        XftColorAllocValue(g_display.display, visual, colormap, &xr_color, &xft_color_cache[idx]);
+        color_initialized[idx] = true;
+    }
+
+    return &xft_color_cache[idx];
+}
 
 /* UTF-8エンコード関数 */
 static int utf8_encode(uint32_t codepoint, char *utf8)
@@ -152,6 +207,7 @@ int display_init(int width, int height)
             0xffff
         };
         XftColorAllocValue(g_display.display, visual, colormap, &xr_color, &xft_color_cache[i]);
+        color_initialized[i] = true;
     }
 
     printf("X11ディスプレイを初期化しました (%dx%d)\n", width, height);
@@ -178,9 +234,12 @@ void display_cleanup(void)
     XftColorFree(g_display.display, visual, colormap, &g_display.xft_fg);
     XftColorFree(g_display.display, visual, colormap, &g_display.xft_bg);
 
-    /* ANSI色を解放 */
-    for (int i = 0; i < 16; i++) {
-        XftColorFree(g_display.display, visual, colormap, &xft_color_cache[i]);
+    /* 初期化済みの色を解放 */
+    for (int i = 0; i < 256; i++) {
+        if (color_initialized[i]) {
+            XftColorFree(g_display.display, visual, colormap, &xft_color_cache[i]);
+            color_initialized[i] = false;
+        }
     }
 
     if (g_display.gc) {
@@ -368,13 +427,13 @@ void display_render_terminal(void)
             int px = x * char_width;
             int py = y * char_height;
 
-            /* 色を取得 */
-            int fg_idx = cell->attr.fg_color & 0x0F;
-            int bg_idx = cell->attr.bg_color & 0x0F;
+            /* 色を取得（256色対応） */
+            uint8_t fg_idx = cell->attr.fg_color;
+            uint8_t bg_idx = cell->attr.bg_color;
 
             /* 反転属性を適用 */
             if (cell->attr.flags & ATTR_REVERSE) {
-                int tmp = fg_idx;
+                uint8_t tmp = fg_idx;
                 fg_idx = bg_idx;
                 bg_idx = tmp;
             }
@@ -386,8 +445,8 @@ void display_render_terminal(void)
 
             /* 背景色を描画 */
             if (bg_idx != 0) {  /* 背景が黒でない場合のみ描画 */
-                XSetForeground(g_display.display, g_display.gc,
-                              xft_color_cache[bg_idx].pixel);
+                XftColor *bg_color = get_color(bg_idx);
+                XSetForeground(g_display.display, g_display.gc, bg_color->pixel);
                 XFillRectangle(g_display.display, g_display.window, g_display.gc,
                               px, py, char_width, char_height);
             }
@@ -402,7 +461,7 @@ void display_render_terminal(void)
                 utf8[len] = '\0';
 
                 /* 前景色を選択 */
-                XftColor *fg_color = &xft_color_cache[fg_idx];
+                XftColor *fg_color = get_color(fg_idx);
 
                 /* 文字を描画 */
                 XftDrawStringUtf8(g_display.xft_draw, fg_color,

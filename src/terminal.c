@@ -630,6 +630,18 @@ static void handle_csi_command(char cmd, const char *param_buf)
                     } else if (p >= 100 && p <= 107) {
                         /* 明るい背景色: 100-107 */
                         g_current_attr.bg_color = (p - 100) + 8;
+                    } else if (p == 38 && i + 2 < param_count) {
+                        /* 256色前景色: 38;5;N */
+                        if (params[i + 1] == 5) {
+                            g_current_attr.fg_color = params[i + 2];
+                            i += 2;  /* パラメータ2つ分スキップ */
+                        }
+                    } else if (p == 48 && i + 2 < param_count) {
+                        /* 256色背景色: 48;5;N */
+                        if (params[i + 1] == 5) {
+                            g_current_attr.bg_color = params[i + 2];
+                            i += 2;  /* パラメータ2つ分スキップ */
+                        }
                     }
                 }
             }

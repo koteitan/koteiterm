@@ -108,18 +108,33 @@ static int get_char_width(uint32_t ch)
  */
 int terminal_init(int rows, int cols)
 {
-    /* バッファを確保 */
+    /* メインバッファを確保 */
     g_terminal.cells = calloc(rows * cols, sizeof(Cell));
     if (!g_terminal.cells) {
         fprintf(stderr, "エラー: ターミナルバッファのメモリ確保に失敗しました\n");
         return -1;
     }
 
+    /* 代替バッファは後で必要に応じて確保 */
+    g_terminal.alternate_cells = NULL;
+    g_terminal.using_alternate = false;
+
     g_terminal.rows = rows;
     g_terminal.cols = cols;
     g_terminal.cursor_x = 0;
     g_terminal.cursor_y = 0;
     g_terminal.cursor_visible = true;
+
+    /* スクロール領域をデフォルト（全画面）に設定 */
+    g_terminal.scroll_top = 0;
+    g_terminal.scroll_bottom = rows - 1;
+
+    /* 保存されたカーソル位置を初期化 */
+    g_terminal.saved_cursor_x = 0;
+    g_terminal.saved_cursor_y = 0;
+    g_terminal.saved_attr.fg_color = 7;
+    g_terminal.saved_attr.bg_color = 0;
+    g_terminal.saved_attr.flags = 0;
 
     /* スクロールバックバッファを初期化 */
     g_terminal.scrollback.capacity = 1000;  /* 1000行の履歴 */
@@ -158,6 +173,12 @@ void terminal_cleanup(void)
     if (g_terminal.cells) {
         free(g_terminal.cells);
         g_terminal.cells = NULL;
+    }
+
+    /* 代替バッファをクリーンアップ */
+    if (g_terminal.alternate_cells) {
+        free(g_terminal.alternate_cells);
+        g_terminal.alternate_cells = NULL;
     }
 
     /* スクロールバックバッファをクリーンアップ */
@@ -648,6 +669,365 @@ static void handle_csi_command(char cmd, const char *param_buf)
             break;
         }
 
+        case 'r':  /* DECSTBM: Set Scrolling Region */
+        {
+            int top = (param_count > 0 && params[0] > 0) ? params[0] - 1 : 0;
+            int bottom = (param_count > 1 && params[1] > 0) ? params[1] - 1 : g_terminal.rows - 1;
+
+            /* 範囲チェック */
+            if (top < 0) top = 0;
+            if (top >= g_terminal.rows) top = g_terminal.rows - 1;
+            if (bottom < 0) bottom = 0;
+            if (bottom >= g_terminal.rows) bottom = g_terminal.rows - 1;
+            if (top > bottom) {
+                int tmp = top;
+                top = bottom;
+                bottom = tmp;
+            }
+
+            g_terminal.scroll_top = top;
+            g_terminal.scroll_bottom = bottom;
+
+            /* カーソルをホームポジション (1,1) に移動 */
+            g_terminal.cursor_x = 0;
+            g_terminal.cursor_y = 0;
+            break;
+        }
+
+        case 'L':  /* IL: Insert Line */
+        {
+            int n = (param_count > 0 && params[0] > 0) ? params[0] : 1;
+            CellAttr default_attr = {.fg_color = 7, .bg_color = 0, .flags = 0};
+
+            /* カーソル行からスクロール領域下端まで下にシフト */
+            for (int i = 0; i < n && g_terminal.cursor_y <= g_terminal.scroll_bottom; i++) {
+                /* 最下行から上に向かって1行ずつ下にコピー */
+                for (int y = g_terminal.scroll_bottom; y > g_terminal.cursor_y; y--) {
+                    for (int x = 0; x < g_terminal.cols; x++) {
+                        Cell *dst = terminal_get_cell(x, y);
+                        Cell *src = terminal_get_cell(x, y - 1);
+                        if (dst && src) {
+                            *dst = *src;
+                        }
+                    }
+                }
+
+                /* カーソル行をクリア */
+                for (int x = 0; x < g_terminal.cols; x++) {
+                    Cell *cell = terminal_get_cell(x, g_terminal.cursor_y);
+                    if (cell) {
+                        cell->ch = ' ';
+                        cell->attr = default_attr;
+                    }
+                }
+            }
+            break;
+        }
+
+        case 'M':  /* DL: Delete Line */
+        {
+            int n = (param_count > 0 && params[0] > 0) ? params[0] : 1;
+            CellAttr default_attr = {.fg_color = 7, .bg_color = 0, .flags = 0};
+
+            /* カーソル行を削除し、下の行を上にシフト */
+            for (int i = 0; i < n && g_terminal.cursor_y <= g_terminal.scroll_bottom; i++) {
+                /* カーソル行から上に向かって下の行をコピー */
+                for (int y = g_terminal.cursor_y; y < g_terminal.scroll_bottom; y++) {
+                    for (int x = 0; x < g_terminal.cols; x++) {
+                        Cell *dst = terminal_get_cell(x, y);
+                        Cell *src = terminal_get_cell(x, y + 1);
+                        if (dst && src) {
+                            *dst = *src;
+                        }
+                    }
+                }
+
+                /* 最下行をクリア */
+                for (int x = 0; x < g_terminal.cols; x++) {
+                    Cell *cell = terminal_get_cell(x, g_terminal.scroll_bottom);
+                    if (cell) {
+                        cell->ch = ' ';
+                        cell->attr = default_attr;
+                    }
+                }
+            }
+            break;
+        }
+
+        case '@':  /* ICH: Insert Character */
+        {
+            int n = (param_count > 0 && params[0] > 0) ? params[0] : 1;
+            CellAttr default_attr = {.fg_color = 7, .bg_color = 0, .flags = 0};
+
+            /* カーソル位置から右の文字を右にシフト */
+            for (int i = 0; i < n; i++) {
+                for (int x = g_terminal.cols - 1; x > g_terminal.cursor_x; x--) {
+                    Cell *dst = terminal_get_cell(x, g_terminal.cursor_y);
+                    Cell *src = terminal_get_cell(x - 1, g_terminal.cursor_y);
+                    if (dst && src) {
+                        *dst = *src;
+                    }
+                }
+
+                /* カーソル位置に空白を挿入 */
+                Cell *cell = terminal_get_cell(g_terminal.cursor_x, g_terminal.cursor_y);
+                if (cell) {
+                    cell->ch = ' ';
+                    cell->attr = default_attr;
+                }
+            }
+            break;
+        }
+
+        case 'P':  /* DCH: Delete Character */
+        {
+            int n = (param_count > 0 && params[0] > 0) ? params[0] : 1;
+            CellAttr default_attr = {.fg_color = 7, .bg_color = 0, .flags = 0};
+
+            /* カーソル位置から文字を削除し、右の文字を左にシフト */
+            for (int i = 0; i < n; i++) {
+                for (int x = g_terminal.cursor_x; x < g_terminal.cols - 1; x++) {
+                    Cell *dst = terminal_get_cell(x, g_terminal.cursor_y);
+                    Cell *src = terminal_get_cell(x + 1, g_terminal.cursor_y);
+                    if (dst && src) {
+                        *dst = *src;
+                    }
+                }
+
+                /* 行末に空白を追加 */
+                Cell *cell = terminal_get_cell(g_terminal.cols - 1, g_terminal.cursor_y);
+                if (cell) {
+                    cell->ch = ' ';
+                    cell->attr = default_attr;
+                }
+            }
+            break;
+        }
+
+        case 'E':  /* CNL: Cursor Next Line */
+        {
+            int n = (param_count > 0 && params[0] > 0) ? params[0] : 1;
+            g_terminal.cursor_y += n;
+            if (g_terminal.cursor_y >= g_terminal.rows) {
+                g_terminal.cursor_y = g_terminal.rows - 1;
+            }
+            g_terminal.cursor_x = 0;
+            break;
+        }
+
+        case 'F':  /* CPL: Cursor Previous Line */
+        {
+            int n = (param_count > 0 && params[0] > 0) ? params[0] : 1;
+            g_terminal.cursor_y -= n;
+            if (g_terminal.cursor_y < 0) {
+                g_terminal.cursor_y = 0;
+            }
+            g_terminal.cursor_x = 0;
+            break;
+        }
+
+        case 'G':  /* CHA/HPA: Cursor Horizontal Absolute */
+        {
+            int col = (param_count > 0 && params[0] > 0) ? params[0] - 1 : 0;
+            if (col >= 0 && col < g_terminal.cols) {
+                g_terminal.cursor_x = col;
+            }
+            break;
+        }
+
+        case 'd':  /* VPA: Line Position Absolute */
+        {
+            int row = (param_count > 0 && params[0] > 0) ? params[0] - 1 : 0;
+            if (row >= 0 && row < g_terminal.rows) {
+                g_terminal.cursor_y = row;
+            }
+            break;
+        }
+
+        case 'S':  /* SU: Scroll Up */
+        {
+            int n = (param_count > 0 && params[0] > 0) ? params[0] : 1;
+            CellAttr default_attr = {.fg_color = 7, .bg_color = 0, .flags = 0};
+
+            for (int i = 0; i < n; i++) {
+                /* スクロール領域を1行上にスクロール */
+                for (int y = g_terminal.scroll_top; y < g_terminal.scroll_bottom; y++) {
+                    for (int x = 0; x < g_terminal.cols; x++) {
+                        Cell *dst = terminal_get_cell(x, y);
+                        Cell *src = terminal_get_cell(x, y + 1);
+                        if (dst && src) {
+                            *dst = *src;
+                        }
+                    }
+                }
+
+                /* 最下行をクリア */
+                for (int x = 0; x < g_terminal.cols; x++) {
+                    Cell *cell = terminal_get_cell(x, g_terminal.scroll_bottom);
+                    if (cell) {
+                        cell->ch = ' ';
+                        cell->attr = default_attr;
+                    }
+                }
+            }
+            break;
+        }
+
+        case 'T':  /* SD: Scroll Down */
+        {
+            int n = (param_count > 0 && params[0] > 0) ? params[0] : 1;
+            CellAttr default_attr = {.fg_color = 7, .bg_color = 0, .flags = 0};
+
+            for (int i = 0; i < n; i++) {
+                /* スクロール領域を1行下にスクロール */
+                for (int y = g_terminal.scroll_bottom; y > g_terminal.scroll_top; y--) {
+                    for (int x = 0; x < g_terminal.cols; x++) {
+                        Cell *dst = terminal_get_cell(x, y);
+                        Cell *src = terminal_get_cell(x, y - 1);
+                        if (dst && src) {
+                            *dst = *src;
+                        }
+                    }
+                }
+
+                /* 最上行をクリア */
+                for (int x = 0; x < g_terminal.cols; x++) {
+                    Cell *cell = terminal_get_cell(x, g_terminal.scroll_top);
+                    if (cell) {
+                        cell->ch = ' ';
+                        cell->attr = default_attr;
+                    }
+                }
+            }
+            break;
+        }
+
+        case 'n':  /* DSR: Device Status Report */
+        {
+            if (param_count > 0 && params[0] == 6) {
+                /* CPR: Cursor Position Report */
+                /* ESC[<row>;<col>R を返す（1ベース） */
+                extern void pty_write(const char *data, size_t len);
+                char response[32];
+                int len = snprintf(response, sizeof(response), "\033[%d;%dR",
+                                 g_terminal.cursor_y + 1, g_terminal.cursor_x + 1);
+                pty_write(response, len);
+            }
+            break;
+        }
+
+        case 'h':  /* SM: Set Mode */
+        case 'l':  /* RM: Reset Mode */
+        {
+            bool set_mode = (cmd == 'h');
+
+            /* プライベートモードかチェック（パラメータが?で始まる） */
+            bool is_private = (param_buf[0] == '?');
+            int mode_params[16];
+            int mode_param_count = 0;
+
+            if (is_private) {
+                /* ?の後のパラメータをパース */
+                parse_csi_params(param_buf + 1, mode_params, &mode_param_count, 16);
+            } else {
+                /* 通常のパラメータ */
+                for (int i = 0; i < param_count; i++) {
+                    mode_params[i] = params[i];
+                }
+                mode_param_count = param_count;
+            }
+
+            for (int i = 0; i < mode_param_count; i++) {
+                int mode = mode_params[i];
+
+                if (is_private) {
+                    /* プライベートモード */
+                    if (mode == 25) {
+                        /* DECTCEM: カーソル表示/非表示 */
+                        g_terminal.cursor_visible = set_mode;
+                    } else if (mode == 1049) {
+                        /* 代替スクリーンバッファ */
+                        if (set_mode) {
+                            /* 代替バッファに切り替え */
+                            if (!g_terminal.alternate_cells) {
+                                /* 代替バッファを初期化 */
+                                g_terminal.alternate_cells = calloc(g_terminal.rows * g_terminal.cols, sizeof(Cell));
+                                if (g_terminal.alternate_cells) {
+                                    CellAttr default_attr = {.fg_color = 7, .bg_color = 0, .flags = 0};
+                                    for (int j = 0; j < g_terminal.rows * g_terminal.cols; j++) {
+                                        g_terminal.alternate_cells[j].ch = ' ';
+                                        g_terminal.alternate_cells[j].attr = default_attr;
+                                    }
+                                }
+                            }
+
+                            if (g_terminal.alternate_cells && !g_terminal.using_alternate) {
+                                /* カーソル位置を保存 */
+                                g_terminal.saved_cursor_x = g_terminal.cursor_x;
+                                g_terminal.saved_cursor_y = g_terminal.cursor_y;
+                                g_terminal.saved_attr = g_current_attr;
+
+                                /* バッファを入れ替え */
+                                Cell *tmp = g_terminal.cells;
+                                g_terminal.cells = g_terminal.alternate_cells;
+                                g_terminal.alternate_cells = tmp;
+                                g_terminal.using_alternate = true;
+
+                                /* カーソルをホームに移動 */
+                                g_terminal.cursor_x = 0;
+                                g_terminal.cursor_y = 0;
+                            }
+                        } else {
+                            /* メインバッファに戻る */
+                            if (g_terminal.using_alternate && g_terminal.alternate_cells) {
+                                /* バッファを入れ替え */
+                                Cell *tmp = g_terminal.cells;
+                                g_terminal.cells = g_terminal.alternate_cells;
+                                g_terminal.alternate_cells = tmp;
+                                g_terminal.using_alternate = false;
+
+                                /* カーソル位置を復元 */
+                                g_terminal.cursor_x = g_terminal.saved_cursor_x;
+                                g_terminal.cursor_y = g_terminal.saved_cursor_y;
+                                g_current_attr = g_terminal.saved_attr;
+                            }
+                        }
+                    } else if (mode == 47 || mode == 1047) {
+                        /* 代替スクリーンバッファ（カーソル保存なし） */
+                        if (set_mode) {
+                            /* 代替バッファに切り替え */
+                            if (!g_terminal.alternate_cells) {
+                                g_terminal.alternate_cells = calloc(g_terminal.rows * g_terminal.cols, sizeof(Cell));
+                                if (g_terminal.alternate_cells) {
+                                    CellAttr default_attr = {.fg_color = 7, .bg_color = 0, .flags = 0};
+                                    for (int j = 0; j < g_terminal.rows * g_terminal.cols; j++) {
+                                        g_terminal.alternate_cells[j].ch = ' ';
+                                        g_terminal.alternate_cells[j].attr = default_attr;
+                                    }
+                                }
+                            }
+
+                            if (g_terminal.alternate_cells && !g_terminal.using_alternate) {
+                                Cell *tmp = g_terminal.cells;
+                                g_terminal.cells = g_terminal.alternate_cells;
+                                g_terminal.alternate_cells = tmp;
+                                g_terminal.using_alternate = true;
+                            }
+                        } else {
+                            /* メインバッファに戻る */
+                            if (g_terminal.using_alternate && g_terminal.alternate_cells) {
+                                Cell *tmp = g_terminal.cells;
+                                g_terminal.cells = g_terminal.alternate_cells;
+                                g_terminal.alternate_cells = tmp;
+                                g_terminal.using_alternate = false;
+                            }
+                        }
+                    }
+                }
+            }
+            break;
+        }
+
         default:
             /* その他のコマンドは無視 */
             break;
@@ -718,6 +1098,18 @@ void terminal_write(const char *data, size_t size)
                     state = STATE_CSI;
                     csi_len = 0;
                     memset(csi_buf, 0, sizeof(csi_buf));
+                } else if (ch == '7') {
+                    /* DECSC: カーソル位置と属性を保存 */
+                    g_terminal.saved_cursor_x = g_terminal.cursor_x;
+                    g_terminal.saved_cursor_y = g_terminal.cursor_y;
+                    g_terminal.saved_attr = g_current_attr;
+                    state = STATE_NORMAL;
+                } else if (ch == '8') {
+                    /* DECRC: カーソル位置と属性を復元 */
+                    g_terminal.cursor_x = g_terminal.saved_cursor_x;
+                    g_terminal.cursor_y = g_terminal.saved_cursor_y;
+                    g_current_attr = g_terminal.saved_attr;
+                    state = STATE_NORMAL;
                 } else {
                     /* その他のエスケープシーケンスは無視 */
                     state = STATE_NORMAL;

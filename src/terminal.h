@@ -51,11 +51,18 @@ typedef struct {
 /* ターミナルバッファ */
 typedef struct {
     Cell *cells;            /* セル配列（rows * cols） */
+    Cell *alternate_cells;  /* 代替スクリーンバッファ */
+    bool using_alternate;   /* 代替バッファ使用中？ */
     int rows;               /* 行数 */
     int cols;               /* 列数 */
     int cursor_x;           /* カーソルX座標 */
     int cursor_y;           /* カーソルY座標 */
     bool cursor_visible;    /* カーソル表示 */
+    int scroll_top;         /* スクロール領域上端（0ベース） */
+    int scroll_bottom;      /* スクロール領域下端（0ベース） */
+    int saved_cursor_x;     /* 保存されたカーソルX座標 */
+    int saved_cursor_y;     /* 保存されたカーソルY座標 */
+    CellAttr saved_attr;    /* 保存された属性 */
     ScrollbackBuffer scrollback;  /* スクロールバック履歴 */
     int scroll_offset;      /* スクロールオフセット（0=最下部） */
     Selection selection;    /* 選択状態 */

@@ -261,4 +261,16 @@ void display_render_terminal(void)
             }
         }
     }
+
+    /* カーソルを描画 */
+    if (g_terminal.cursor_visible) {
+        int cx = g_terminal.cursor_x * char_width;
+        int cy = g_terminal.cursor_y * char_height;
+
+        /* カーソルを白い矩形として描画 */
+        XSetForeground(g_display.display, g_display.gc,
+                      WhitePixel(g_display.display, g_display.screen));
+        XFillRectangle(g_display.display, g_display.window, g_display.gc,
+                      cx, cy, char_width, 2);  /* 下線カーソル */
+    }
 }

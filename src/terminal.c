@@ -1043,10 +1043,13 @@ void terminal_write(const char *data, size_t size)
         STATE_NORMAL,
         STATE_ESC,
         STATE_CSI,
+        STATE_OSC,
     } state = STATE_NORMAL;
 
     static char csi_buf[256];
     static int csi_len = 0;
+    static char osc_buf[512];
+    static int osc_len = 0;
 
     for (size_t i = 0; i < size; ) {
         unsigned char ch = (unsigned char)data[i];
@@ -1098,6 +1101,11 @@ void terminal_write(const char *data, size_t size)
                     state = STATE_CSI;
                     csi_len = 0;
                     memset(csi_buf, 0, sizeof(csi_buf));
+                } else if (ch == ']') {
+                    /* OSC: Operating System Command */
+                    state = STATE_OSC;
+                    osc_len = 0;
+                    memset(osc_buf, 0, sizeof(osc_buf));
                 } else if (ch == '7') {
                     /* DECSC: カーソル位置と属性を保存 */
                     g_terminal.saved_cursor_x = g_terminal.cursor_x;
@@ -1134,6 +1142,37 @@ void terminal_write(const char *data, size_t size)
                     state = STATE_NORMAL;
                 }
                 i++;
+                break;
+
+            case STATE_OSC:
+                /* OSCシーケンスを収集（BELまたはESC\で終了） */
+                if (ch == 0x07) {
+                    /* BEL (0x07) で終了 */
+                    osc_buf[osc_len] = '\0';
+                    /* OSCシーケンスは無視（ウィンドウタイトル設定など） */
+                    state = STATE_NORMAL;
+                    i++;
+                } else if (ch == 0x1B) {
+                    /* ESC: 次が \ なら ST (String Terminator) */
+                    if (i + 1 < size && (unsigned char)data[i + 1] == '\\') {
+                        /* ESC \ で終了 */
+                        osc_buf[osc_len] = '\0';
+                        state = STATE_NORMAL;
+                        i += 2;  /* ESC と \ をスキップ */
+                    } else {
+                        /* 単なるESC、バッファに追加 */
+                        if (osc_len < (int)sizeof(osc_buf) - 1) {
+                            osc_buf[osc_len++] = ch;
+                        }
+                        i++;
+                    }
+                } else {
+                    /* OSCシーケンスの文字を収集 */
+                    if (osc_len < (int)sizeof(osc_buf) - 1) {
+                        osc_buf[osc_len++] = ch;
+                    }
+                    i++;
+                }
                 break;
         }
     }

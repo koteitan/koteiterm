@@ -4,6 +4,7 @@ obj/
 *.o
 *.a
 *.so
+a.out
 
 # デバッグファイル
 *.dSYM/

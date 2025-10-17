@@ -28,6 +28,14 @@ make
 ./koteiterm
 ```
 
+### オプション
+
+```bash
+./koteiterm --help       # ヘルプを表示
+./koteiterm --version    # バージョン情報を表示
+./koteiterm --debug-key  # キー入力のデバッグ情報を表示
+```
+
 ## 操作方法
 
 ### キーボード操作
@@ -135,6 +143,13 @@ make
 - ❌ タブ機能
 - ❌ 分割ウィンドウ
 - ❌ CLIPBOARD選択（Ctrl+C/Ctrl+V）
+
+### IME（日本語入力）の制限
+- XIM/XICの基本統合は実装済み
+- Alt+`などのIME切り替えキーは正しく検出される
+- WSL環境の制限により、完全なIME統合（プリエディット、候補ウィンドウ等）は困難
+- 現時点では外部IME（Windows側のIME等）に依存する必要がある
+- キー入力のデバッグは`--debug-key`オプションで確認可能
 
 ## プロジェクト構成
 

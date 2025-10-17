@@ -124,6 +124,7 @@ int terminal_init(int rows, int cols)
     g_terminal.cursor_x = 0;
     g_terminal.cursor_y = 0;
     g_terminal.cursor_visible = true;
+    g_terminal.auto_wrap_mode = true;  /* デフォルトは自動折り返し有効 */
 
     /* スクロール領域をデフォルト（全画面）に設定 */
     g_terminal.scroll_top = 0;
@@ -147,6 +148,7 @@ int terminal_init(int rows, int cols)
         return -1;
     }
     g_terminal.scroll_offset = 0;  /* 最下部から開始 */
+    g_terminal.pending_wrap = false;    /* 折り返し保留フラグ初期化 */
 
     /* 初期化: 空白で埋める */
     CellAttr default_attr = {
@@ -259,6 +261,8 @@ void terminal_set_cursor(int x, int y)
     if (y >= 0 && y < g_terminal.rows) {
         g_terminal.cursor_y = y;
     }
+    /* カーソル移動時に折り返し保留状態をクリア */
+    g_terminal.pending_wrap = false;
 }
 
 /**
@@ -404,6 +408,7 @@ int terminal_resize(int new_rows, int new_cols)
 void terminal_carriage_return(void)
 {
     g_terminal.cursor_x = 0;
+    g_terminal.pending_wrap = false;  /* CR時に折り返し保留をクリア */
 }
 
 /**
@@ -417,6 +422,7 @@ void terminal_newline(void)
         terminal_scroll_up();
         g_terminal.cursor_y = g_terminal.rows - 1;
     }
+    g_terminal.pending_wrap = false;  /* LF時に折り返し保留をクリア */
 }
 
 /**
@@ -424,6 +430,13 @@ void terminal_newline(void)
  */
 void terminal_put_char_at_cursor(uint32_t ch)
 {
+    /* pending wrap状態なら、まず改行する */
+    if (g_terminal.pending_wrap) {
+        g_terminal.cursor_x = 0;
+        terminal_newline();
+        g_terminal.pending_wrap = false;
+    }
+
     int char_width = get_char_width(ch);
 
     Cell *cell = terminal_get_cell(g_terminal.cursor_x, g_terminal.cursor_y);
@@ -444,9 +457,15 @@ void terminal_put_char_at_cursor(uint32_t ch)
     /* カーソルを文字幅分進める */
     g_terminal.cursor_x += char_width;
     if (g_terminal.cursor_x >= g_terminal.cols) {
-        /* 行末に達したら次の行へ */
-        g_terminal.cursor_x = 0;
-        terminal_newline();
+        /* 行末に達した時の処理 */
+        if (g_terminal.auto_wrap_mode) {
+            /* 自動折り返しモード: 次の印字文字まで改行を保留 */
+            g_terminal.pending_wrap = true;
+            g_terminal.cursor_x = g_terminal.cols - 1;  /* 行末に留める */
+        } else {
+            /* 自動折り返し無効: 行末に留まる */
+            g_terminal.cursor_x = g_terminal.cols - 1;
+        }
     }
 }
 
@@ -483,6 +502,12 @@ static void handle_csi_command(char cmd, const char *param_buf)
     int param_count;
 
     parse_csi_params(param_buf, params, &param_count, 16);
+
+    /* デバッグ: CSIコマンドをログ出力 */
+    extern bool g_debug;
+    if (g_debug) {
+        fprintf(stderr, "CSI: ESC[%s%c (cursor_before: %d,%d)\n", param_buf, cmd, g_terminal.cursor_x, g_terminal.cursor_y);
+    }
 
     switch (cmd) {
         case 'A':  /* CUU: Cursor Up */
@@ -925,6 +950,31 @@ static void handle_csi_command(char cmd, const char *param_buf)
             break;
         }
 
+        case 's':  /* SCP / SCOSC: Save Cursor Position (ANSI.SYS) */
+        {
+            g_terminal.saved_cursor_x = g_terminal.cursor_x;
+            g_terminal.saved_cursor_y = g_terminal.cursor_y;
+            g_terminal.saved_attr = g_current_attr;
+            break;
+        }
+
+        case 'u':  /* RCP / SCORC: Restore Cursor Position (ANSI.SYS) */
+        {
+            g_terminal.cursor_x = g_terminal.saved_cursor_x;
+            g_terminal.cursor_y = g_terminal.saved_cursor_y;
+            g_current_attr = g_terminal.saved_attr;
+            break;
+        }
+
+        case 'c':  /* DA: Device Attributes */
+        {
+            /* VT100として応答 */
+            extern void pty_write(const char *data, size_t len);
+            const char *response = "\033[?1;0c";  /* VT100 with No Options */
+            pty_write(response, strlen(response));
+            break;
+        }
+
         case 'h':  /* SM: Set Mode */
         case 'l':  /* RM: Reset Mode */
         {
@@ -951,7 +1001,10 @@ static void handle_csi_command(char cmd, const char *param_buf)
 
                 if (is_private) {
                     /* プライベートモード */
-                    if (mode == 25) {
+                    if (mode == 7) {
+                        /* DECAWM: Auto-Wrap Mode */
+                        g_terminal.auto_wrap_mode = set_mode;
+                    } else if (mode == 25) {
                         /* DECTCEM: カーソル表示/非表示 */
                         g_terminal.cursor_visible = set_mode;
                     } else if (mode == 1049) {
@@ -1038,8 +1091,14 @@ static void handle_csi_command(char cmd, const char *param_buf)
         }
 
         default:
-            /* その他のコマンドは無視 */
+        {
+            /* その他のコマンドは無視（デバッグ用に出力） */
+            extern bool g_debug;
+            if (g_debug) {
+                fprintf(stderr, "未実装のCSIコマンド: ESC[%s%c\n", param_buf, cmd);
+            }
             break;
+        }
     }
 }
 
@@ -1069,9 +1128,18 @@ void terminal_write(const char *data, size_t size)
                     state = STATE_ESC;
                     i++;
                 } else if (ch == '\n') {
+                    extern bool g_debug;
+                    if (g_debug) {
+                        fprintf(stderr, "LF: \\n (cursor_before: %d,%d)\n",
+                                g_terminal.cursor_x, g_terminal.cursor_y);
+                    }
                     terminal_newline();
                     i++;
                 } else if (ch == '\r') {
+                    extern bool g_debug;
+                    if (g_debug) {
+                        fprintf(stderr, "CR: \\r (cursor_before: %d,%d)\n", g_terminal.cursor_x, g_terminal.cursor_y);
+                    }
                     terminal_carriage_return();
                     i++;
                 } else if (ch == '\b') {
@@ -1127,8 +1195,61 @@ void terminal_write(const char *data, size_t size)
                     g_terminal.cursor_y = g_terminal.saved_cursor_y;
                     g_current_attr = g_terminal.saved_attr;
                     state = STATE_NORMAL;
+                } else if (ch == 'M') {
+                    /* RI: Reverse Index (逆改行) */
+                    g_terminal.cursor_y--;
+                    if (g_terminal.cursor_y < g_terminal.scroll_top) {
+                        /* スクロール領域の上端に達した場合、下にスクロール */
+                        for (int y = g_terminal.scroll_bottom; y > g_terminal.scroll_top; y--) {
+                            for (int x = 0; x < g_terminal.cols; x++) {
+                                Cell *dst = terminal_get_cell(x, y);
+                                Cell *src = terminal_get_cell(x, y - 1);
+                                if (dst && src) {
+                                    *dst = *src;
+                                }
+                            }
+                        }
+                        /* 最上行をクリア */
+                        CellAttr default_attr = {.fg_color = 7, .bg_color = 0, .flags = 0};
+                        for (int x = 0; x < g_terminal.cols; x++) {
+                            Cell *cell = terminal_get_cell(x, g_terminal.scroll_top);
+                            if (cell) {
+                                cell->ch = ' ';
+                                cell->attr = default_attr;
+                            }
+                        }
+                        g_terminal.cursor_y = g_terminal.scroll_top;
+                    }
+                    state = STATE_NORMAL;
+                } else if (ch == '=') {
+                    /* DECKPAM: アプリケーションキーパッドモード */
+                    /* 現在は無視 */
+                    state = STATE_NORMAL;
+                } else if (ch == '>') {
+                    /* DECKPNM: 数値キーパッドモード */
+                    /* 現在は無視 */
+                    state = STATE_NORMAL;
+                } else if (ch == 'c') {
+                    /* RIS: Reset to Initial State (端末リセット) */
+                    terminal_clear();
+                    g_terminal.cursor_x = 0;
+                    g_terminal.cursor_y = 0;
+                    g_current_attr.fg_color = 7;
+                    g_current_attr.bg_color = 0;
+                    g_current_attr.flags = 0;
+                    g_terminal.scroll_top = 0;
+                    g_terminal.scroll_bottom = g_terminal.rows - 1;
+                    state = STATE_NORMAL;
                 } else {
-                    /* その他のエスケープシーケンスは無視 */
+                    /* その他のエスケープシーケンスは無視（デバッグ用に出力） */
+                    extern bool g_debug;
+                    if (g_debug) {
+                        if (ch >= 0x20 && ch < 0x7F) {
+                            fprintf(stderr, "未実装のESCシーケンス: ESC %c (0x%02x)\n", ch, ch);
+                        } else {
+                            fprintf(stderr, "未実装のESCシーケンス: ESC 0x%02x\n", ch);
+                        }
+                    }
                     state = STATE_NORMAL;
                 }
                 i++;

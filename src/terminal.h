@@ -58,6 +58,7 @@ typedef struct {
     int cursor_x;           /* カーソルX座標 */
     int cursor_y;           /* カーソルY座標 */
     bool cursor_visible;    /* カーソル表示 */
+    bool auto_wrap_mode;    /* 自動折り返しモード（DECAWM） */
     int scroll_top;         /* スクロール領域上端（0ベース） */
     int scroll_bottom;      /* スクロール領域下端（0ベース） */
     int saved_cursor_x;     /* 保存されたカーソルX座標 */
@@ -66,6 +67,7 @@ typedef struct {
     ScrollbackBuffer scrollback;  /* スクロールバック履歴 */
     int scroll_offset;      /* スクロールオフセット（0=最下部） */
     Selection selection;    /* 選択状態 */
+    bool pending_wrap;      /* 行末折り返し保留状態 */
 } TerminalBuffer;
 
 /* グローバルターミナルバッファ */

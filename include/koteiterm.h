@@ -64,7 +64,6 @@ bool pty_is_child_running(void);
 /* terminal.c */
 int terminal_init(int rows, int cols);
 void terminal_cleanup(void);
-void terminal_put_char(int x, int y, uint32_t ch, void *attr);
 void terminal_clear(void);
 
 /* font.c */

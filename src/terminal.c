@@ -130,3 +130,138 @@ void terminal_get_cursor(int *x, int *y)
         *y = g_terminal.cursor_y;
     }
 }
+
+/**
+ * 画面を1行上にスクロール
+ */
+void terminal_scroll_up(void)
+{
+    /* 最初の行を削除、全ての行を1行上に移動 */
+    int line_size = g_terminal.cols * sizeof(Cell);
+    memmove(g_terminal.cells,
+            g_terminal.cells + g_terminal.cols,
+            (g_terminal.rows - 1) * line_size);
+
+    /* 最後の行をクリア */
+    CellAttr default_attr = {
+        .fg_color = 7,  /* 白 */
+        .bg_color = 0,  /* 黒 */
+        .flags = 0
+    };
+
+    int last_row_start = (g_terminal.rows - 1) * g_terminal.cols;
+    for (int x = 0; x < g_terminal.cols; x++) {
+        g_terminal.cells[last_row_start + x].ch = ' ';
+        g_terminal.cells[last_row_start + x].attr = default_attr;
+    }
+}
+
+/**
+ * キャリッジリターン処理
+ */
+void terminal_carriage_return(void)
+{
+    g_terminal.cursor_x = 0;
+}
+
+/**
+ * 改行処理
+ */
+void terminal_newline(void)
+{
+    g_terminal.cursor_y++;
+    if (g_terminal.cursor_y >= g_terminal.rows) {
+        /* スクロール */
+        terminal_scroll_up();
+        g_terminal.cursor_y = g_terminal.rows - 1;
+    }
+}
+
+/**
+ * 1文字をカーソル位置に書き込んで進める
+ */
+void terminal_put_char_at_cursor(uint32_t ch)
+{
+    CellAttr default_attr = {
+        .fg_color = 7,  /* 白 */
+        .bg_color = 0,  /* 黒 */
+        .flags = 0
+    };
+
+    Cell *cell = terminal_get_cell(g_terminal.cursor_x, g_terminal.cursor_y);
+    if (cell) {
+        cell->ch = ch;
+        cell->attr = default_attr;
+    }
+
+    /* カーソルを右に進める */
+    g_terminal.cursor_x++;
+    if (g_terminal.cursor_x >= g_terminal.cols) {
+        /* 行末に達したら次の行へ */
+        g_terminal.cursor_x = 0;
+        terminal_newline();
+    }
+}
+
+/**
+ * バイト列を処理してターミナルバッファに書き込む
+ * 簡易版: エスケープシーケンスは無視、ASCII文字のみ処理
+ */
+void terminal_write(const char *data, size_t size)
+{
+    static enum {
+        STATE_NORMAL,
+        STATE_ESC,
+        STATE_CSI,
+    } state = STATE_NORMAL;
+
+    for (size_t i = 0; i < size; i++) {
+        unsigned char ch = (unsigned char)data[i];
+
+        switch (state) {
+            case STATE_NORMAL:
+                if (ch == 0x1B) {  /* ESC */
+                    state = STATE_ESC;
+                } else if (ch == '\n') {
+                    terminal_newline();
+                } else if (ch == '\r') {
+                    terminal_carriage_return();
+                } else if (ch == '\b') {
+                    /* バックスペース */
+                    if (g_terminal.cursor_x > 0) {
+                        g_terminal.cursor_x--;
+                    }
+                } else if (ch == '\t') {
+                    /* タブ: 次の8の倍数位置へ */
+                    int next_tab = ((g_terminal.cursor_x / 8) + 1) * 8;
+                    if (next_tab >= g_terminal.cols) {
+                        next_tab = g_terminal.cols - 1;
+                    }
+                    g_terminal.cursor_x = next_tab;
+                } else if (ch >= 0x20) {
+                    /* 表示可能文字 */
+                    terminal_put_char_at_cursor(ch);
+                }
+                /* その他の制御文字は無視 */
+                break;
+
+            case STATE_ESC:
+                if (ch == '[') {
+                    state = STATE_CSI;
+                } else {
+                    /* その他のエスケープシーケンスは無視 */
+                    state = STATE_NORMAL;
+                }
+                break;
+
+            case STATE_CSI:
+                /* CSIシーケンスの終端文字を待つ */
+                if ((ch >= 0x40 && ch <= 0x7E) || ch < 0x20) {
+                    /* 終端文字: @A-Z[\]^_`a-z{|}~ または制御文字 */
+                    state = STATE_NORMAL;
+                }
+                /* パラメータとして0-9;?などは無視して読み飛ばす */
+                break;
+        }
+    }
+}

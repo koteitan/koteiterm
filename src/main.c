@@ -5,6 +5,7 @@
 
 #include "koteiterm.h"
 #include "display.h"
+#include "terminal.h"
 #include <signal.h>
 #include <unistd.h>
 
@@ -56,12 +57,6 @@ static int init(void)
         font_cleanup(g_display.display);
         display_cleanup();
         return -1;
-    }
-
-    /* テスト: いくつかの文字を書き込む */
-    const char *test_msg = "Hello, koteiterm!";
-    for (int i = 0; test_msg[i] != '\0' && i < g_term.cols; i++) {
-        terminal_put_char(i, 0, test_msg[i], NULL);
     }
 
     /* PTYの初期化とシェル起動 */
@@ -117,10 +112,8 @@ static void main_loop(void)
         /* PTYからデータを読み取る */
         ssize_t n = pty_read(buffer, sizeof(buffer) - 1);
         if (n > 0) {
-            /* デバッグ: 標準出力に表示 */
-            buffer[n] = '\0';
-            printf("%s", buffer);
-            fflush(stdout);
+            /* ターミナルバッファに書き込む */
+            terminal_write(buffer, n);
         }
 
         /* 子プロセスの状態をチェック */

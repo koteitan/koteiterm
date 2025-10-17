@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /* セル属性 */
 typedef struct {
@@ -86,5 +87,33 @@ void terminal_set_cursor(int x, int y);
  * @param y Y座標を格納する変数へのポインタ
  */
 void terminal_get_cursor(int *x, int *y);
+
+/**
+ * バイト列を処理してターミナルバッファに書き込む
+ * @param data データ
+ * @param size データサイズ
+ */
+void terminal_write(const char *data, size_t size);
+
+/**
+ * 1文字をカーソル位置に書き込んで進める
+ * @param ch 文字
+ */
+void terminal_put_char_at_cursor(uint32_t ch);
+
+/**
+ * 改行処理
+ */
+void terminal_newline(void);
+
+/**
+ * キャリッジリターン処理
+ */
+void terminal_carriage_return(void);
+
+/**
+ * 画面を1行上にスクロール
+ */
+void terminal_scroll_up(void);
 
 #endif /* TERMINAL_H */

@@ -278,6 +278,9 @@ int main(int argc, char *argv[])
             g_debug_key = true;
         } else if (strcmp(argv[i], "--truecolor") == 0) {
             g_truecolor_mode = true;
+            /* 環境変数を設定してシェルに伝える */
+            setenv("KOTEITERM_TRUECOLOR", "1", 1);
+            setenv("COLORTERM", "truecolor", 1);
         } else if (strcmp(argv[i], "-fg") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "エラー: -fg オプションには色の指定が必要です\n");

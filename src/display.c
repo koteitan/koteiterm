@@ -816,6 +816,13 @@ bool display_handle_events(void)
                         if (g_debug) {
                             fprintf(stderr, "DEBUG: terminal_get_selected_text() returned: %s\n",
                                    selection_text ? selection_text : "NULL");
+                            if (selection_text) {
+                                fprintf(stderr, "DEBUG: selection_text hex dump: ");
+                                for (size_t i = 0; i < strlen(selection_text) && i < 32; i++) {
+                                    fprintf(stderr, "%02x ", (unsigned char)selection_text[i]);
+                                }
+                                fprintf(stderr, "\n");
+                            }
                         }
                         if (selection_text) {
                             /* PRIMARYとCLIPBOARDの両方を設定（WSLg互換性のため） */
@@ -824,23 +831,39 @@ bool display_handle_events(void)
                             XSetSelectionOwner(g_display.display, g_display.clipboard_atom,
                                               g_display.window, CurrentTime);
 
-                            /* WSLg互換性のため、clip.exeを使ってWindowsクリップボードにもコピー */
-                            FILE *clip = popen("clip.exe 2>/dev/null", "w");
-                            if (clip) {
-                                fwrite(selection_text, 1, strlen(selection_text), clip);
-                                pclose(clip);
-                                if (g_debug) {
-                                    fprintf(stderr, "DEBUG: マウス選択でclip.exe経由でWindowsクリップボードにコピー\n");
+                            /* WSLg互換性のため、PowerShellのSet-ClipboardをBase64経由で使用 */
+                            /* Base64エンコードしてPowerShellに渡すことでエンコーディング問題を回避 */
+                            size_t len = strlen(selection_text);
+                            /* Base64エンコード用バッファ（元データの4/3 + パディング） */
+                            size_t b64_len = ((len + 2) / 3) * 4;
+                            char *b64 = malloc(b64_len + 1);
+                            if (b64) {
+                                /* 簡易Base64エンコード */
+                                static const char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                                size_t i, j;
+                                for (i = 0, j = 0; i < len; i += 3, j += 4) {
+                                    uint32_t n = (unsigned char)selection_text[i] << 16;
+                                    if (i + 1 < len) n |= (unsigned char)selection_text[i + 1] << 8;
+                                    if (i + 2 < len) n |= (unsigned char)selection_text[i + 2];
+
+                                    b64[j] = base64_chars[(n >> 18) & 0x3F];
+                                    b64[j + 1] = base64_chars[(n >> 12) & 0x3F];
+                                    b64[j + 2] = (i + 1 < len) ? base64_chars[(n >> 6) & 0x3F] : '=';
+                                    b64[j + 3] = (i + 2 < len) ? base64_chars[n & 0x3F] : '=';
                                 }
-                            } else {
-                                /* clip.exeが使えない場合はxclipを試す */
-                                FILE *xclip = popen("xclip -selection clipboard 2>/dev/null", "w");
-                                if (xclip) {
-                                    fwrite(selection_text, 1, strlen(selection_text), xclip);
-                                    pclose(xclip);
-                                    if (g_debug) {
-                                        fprintf(stderr, "DEBUG: マウス選択でxclip経由でCLIPBOARDにコピー\n");
-                                    }
+                                b64[j] = '\0';
+
+                                /* PowerShellコマンドを構築 */
+                                char cmd[8192];
+                                snprintf(cmd, sizeof(cmd),
+                                    "powershell.exe -Command \"[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s')) | Set-Clipboard\" 2>/dev/null",
+                                    b64);
+
+                                int ret = system(cmd);
+                                free(b64);
+
+                                if (ret == 0 && g_debug) {
+                                    fprintf(stderr, "DEBUG: マウス選択でPowerShell/Base64経由でWindowsクリップボードにコピー\n");
                                 }
                             }
 

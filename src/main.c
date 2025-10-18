@@ -23,7 +23,7 @@ bool g_debug = false;
 bool g_debug_key = false;
 
 /* Truecolor（24-bit RGB）モードフラグ */
-bool g_truecolor_mode = false;
+bool g_truecolor_mode = true;
 
 /* 色オプション設定（デフォルトはNULL = システムデフォルト） */
 ColorOptions g_color_options = {
@@ -245,12 +245,12 @@ static void print_usage(const char *prog_name)
     printf("  マウスホイール下   下にスクロール（3行）\n");
     printf("\n");
     printf("カラーモード:\n");
-    printf("  --truecolor      24-bit RGBカラー（約1677万色）を有効化\n");
-    printf("                   （デフォルトは256色モード）\n");
+    printf("  --truecolor      24-bit RGBカラー（約1677万色）を有効化（デフォルト）\n");
+    printf("  --256color       256色モードに戻す\n");
     printf("\n");
     printf("機能:\n");
     printf("  - VT100/ANSI完全互換\n");
-    printf("  - 256色対応（または--truecolorで24-bit RGB対応）\n");
+    printf("  - 24-bit Truecolor対応（デフォルト、または--256colorで256色モード）\n");
     printf("  - UTF-8/日本語表示\n");
     printf("  - 全角文字対応（2セル幅）\n");
     printf("  - スクロールバック履歴（1000行）\n");
@@ -278,9 +278,8 @@ int main(int argc, char *argv[])
             g_debug_key = true;
         } else if (strcmp(argv[i], "--truecolor") == 0) {
             g_truecolor_mode = true;
-            /* 環境変数を設定してシェルに伝える */
-            setenv("KOTEITERM_TRUECOLOR", "1", 1);
-            setenv("COLORTERM", "truecolor", 1);
+        } else if (strcmp(argv[i], "--256color") == 0) {
+            g_truecolor_mode = false;
         } else if (strcmp(argv[i], "-fg") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "エラー: -fg オプションには色の指定が必要です\n");
@@ -379,6 +378,12 @@ int main(int argc, char *argv[])
             print_usage(argv[0]);
             return 1;
         }
+    }
+
+    /* 環境変数を設定してシェルに伝える */
+    if (g_truecolor_mode) {
+        setenv("KOTEITERM_TRUECOLOR", "1", 1);
+        setenv("COLORTERM", "truecolor", 1);
     }
 
     /* 初期化 */

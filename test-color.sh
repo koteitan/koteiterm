@@ -1,14 +1,6 @@
 #!/bin/bash
 # 24-bit RGBカラー（Truecolor）テストスクリプト
 
-# 現在のカラーモードを表示
-if [ -n "$COLORTERM" ]; then
-    echo "現在のカラーモード: $COLORTERM"
-else
-    echo "現在のカラーモード: 256色モード（COLORTERM未設定）"
-fi
-echo ""
-
 echo "======================================"
 echo "セクション1: 256 color テスト"
 echo "======================================"

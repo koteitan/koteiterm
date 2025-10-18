@@ -7,9 +7,11 @@
 
 /* セル属性 */
 typedef struct {
-    uint8_t fg_color;       /* 前景色（0-15: ANSI色） */
-    uint8_t bg_color;       /* 背景色（0-15: ANSI色） */
+    uint8_t fg_color;       /* 前景色（0-255: 256色パレットインデックス） */
+    uint8_t bg_color;       /* 背景色（0-255: 256色パレットインデックス） */
     uint8_t flags;          /* 属性フラグ */
+    uint32_t fg_rgb;        /* 24-bit RGB前景色（0x00RRGGBB） */
+    uint32_t bg_rgb;        /* 24-bit RGB背景色（0x00RRGGBB） */
 } CellAttr;
 
 /* 属性フラグ */
@@ -17,6 +19,8 @@ typedef struct {
 #define ATTR_ITALIC    (1 << 1)
 #define ATTR_UNDERLINE (1 << 2)
 #define ATTR_REVERSE   (1 << 3)
+#define ATTR_FG_TRUECOLOR (1 << 4)  /* 前景色が24-bit RGB */
+#define ATTR_BG_TRUECOLOR (1 << 5)  /* 背景色が24-bit RGB */
 
 /* 特殊文字コード */
 #define WIDE_CHAR_CONTINUATION 0xFFFFFFFE  /* 全角文字の2セル目 */

@@ -107,6 +107,24 @@ static XftColor *get_color(uint8_t idx)
 }
 
 /**
+ * 24-bit RGB値からXftColorを作成（Truecolorモード用）
+ * @param rgb RGB値（0x00RRGGBB形式）
+ * @param xft_color 出力先XftColor
+ */
+static void get_rgb_color(uint32_t rgb, XftColor *xft_color)
+{
+    unsigned short r = ((rgb >> 16) & 0xFF) * 257;  /* 0-255 → 0-65535 */
+    unsigned short g = ((rgb >> 8) & 0xFF) * 257;
+    unsigned short b = (rgb & 0xFF) * 257;
+
+    XRenderColor xr_color = {r, g, b, 0xffff};
+    Visual *visual = DefaultVisual(g_display.display, g_display.screen);
+    Colormap colormap = DefaultColormap(g_display.display, g_display.screen);
+
+    XftColorAllocValue(g_display.display, visual, colormap, &xr_color, xft_color);
+}
+
+/**
  * 色文字列をパースしてXftColorを割り当てる
  * @param color_str 色文字列（NULL可）
  * @param default_r デフォルトR値
@@ -922,7 +940,7 @@ void display_render_terminal(void)
 
     int scroll_offset = terminal_get_scroll_offset();
 
-    /* 全てのセルを描画 */
+    /* パス1: 全ての背景を描画 */
     for (int y = 0; y < g_terminal.rows; y++) {
         for (int x = 0; x < g_terminal.cols; x++) {
             Cell *cell = NULL;
@@ -972,41 +990,113 @@ void display_render_terminal(void)
                 bg_idx = tmp;
             }
 
-            /* 選択範囲の色を決定 */
-            XftColor *fg_color = NULL;
+            /* 背景色を決定 */
             XftColor *bg_color = NULL;
+            XftColor temp_bg_color;  /* Truecolorモード用の一時カラー */
 
             if (is_selected) {
                 /* 選択範囲は設定色を使用 */
-                fg_color = &g_display.xft_sel_fg;
                 bg_color = &g_display.xft_sel_bg;
             } else {
-                /* 前景色: fg_idx=7（デフォルト白）の場合はカスタム色を使用 */
-                if (fg_idx == 7) {
-                    fg_color = &g_display.xft_fg;
-                } else {
-                    fg_color = get_color(fg_idx);
-                }
-
-                /* 背景色: bg_idx=0（デフォルト黒）の場合はカスタム色を使用 */
-                if (bg_idx == 0) {
+                /* 背景色を決定 */
+                if (cell->attr.flags & ATTR_BG_TRUECOLOR) {
+                    /* Truecolor背景色 */
+                    get_rgb_color(cell->attr.bg_rgb, &temp_bg_color);
+                    bg_color = &temp_bg_color;
+                } else if (bg_idx == 0) {
+                    /* デフォルト黒はカスタム色を使用 */
                     bg_color = &g_display.xft_bg;
                 } else {
+                    /* 256色パレット */
                     bg_color = get_color(bg_idx);
                 }
             }
 
-            /* WIDE_CHAR_CONTINUATIONはスキップ（全角文字の2セル目） */
+            /* 背景色を描画 */
+            /* 選択範囲、または背景色がデフォルト以外、またはTruecolor背景、またはカスタム背景色が設定されている場合に描画 */
+            if (is_selected || bg_idx != 0 || (cell->attr.flags & ATTR_BG_TRUECOLOR) || g_color_options.background != NULL) {
+                XSetForeground(g_display.display, g_display.gc, bg_color->pixel);
+                XFillRectangle(g_display.display, g_display.window, g_display.gc,
+                              px, py, char_width, char_height);
+            }
+        }
+    }
+
+    /* パス2: 全ての文字を描画 */
+    for (int y = 0; y < g_terminal.rows; y++) {
+        for (int x = 0; x < g_terminal.cols; x++) {
+            Cell *cell = NULL;
+
+            /* スクロールオフセットを考慮してセルを取得 */
+            if (scroll_offset > 0) {
+                /* スクロールバックバッファから取得 */
+                int scrollback_line_idx = g_terminal.scrollback.count - scroll_offset + y;
+
+                if (scrollback_line_idx >= 0 && scrollback_line_idx < g_terminal.scrollback.count) {
+                    /* スクロールバックバッファから */
+                    ScrollbackLine *line = terminal_get_scrollback_line(scrollback_line_idx);
+                    if (line && line->cells && x < line->cols) {
+                        cell = &line->cells[x];
+                    }
+                } else if (scrollback_line_idx >= g_terminal.scrollback.count) {
+                    /* 通常バッファから */
+                    int buffer_y = scrollback_line_idx - g_terminal.scrollback.count;
+                    if (buffer_y >= 0 && buffer_y < g_terminal.rows) {
+                        cell = terminal_get_cell(x, buffer_y);
+                    }
+                }
+            } else {
+                /* スクロールオフセットなし：通常バッファから */
+                cell = terminal_get_cell(x, y);
+            }
+
+            if (!cell) {
+                continue;
+            }
+
+            /* WIDE_CHAR_CONTINUATIONは文字描画をスキップ（全角文字の2セル目） */
             if (cell->ch == WIDE_CHAR_CONTINUATION) {
                 continue;
             }
 
-            /* 背景色を描画 */
-            /* 選択範囲、または背景色がデフォルト以外、またはカスタム背景色が設定されている場合に描画 */
-            if (is_selected || bg_idx != 0 || g_color_options.background != NULL) {
-                XSetForeground(g_display.display, g_display.gc, bg_color->pixel);
-                XFillRectangle(g_display.display, g_display.window, g_display.gc,
-                              px, py, char_width, char_height);
+            /* 描画位置を計算 */
+            int px = x * char_width;
+            int py = y * char_height;
+
+            /* 色を取得（256色対応） */
+            uint8_t fg_idx = cell->attr.fg_color;
+            uint8_t bg_idx = cell->attr.bg_color;
+
+            /* 選択範囲のハイライト */
+            bool is_selected = terminal_is_selected(x, y);
+
+            /* 反転属性を適用 */
+            if (cell->attr.flags & ATTR_REVERSE) {
+                uint8_t tmp = fg_idx;
+                fg_idx = bg_idx;
+                bg_idx = tmp;
+            }
+
+            /* 前景色を決定 */
+            XftColor *fg_color = NULL;
+            XftColor temp_fg_color;  /* Truecolorモード用の一時カラー */
+
+            if (is_selected) {
+                /* 選択範囲は設定色を使用 */
+                fg_color = &g_display.xft_sel_fg;
+            } else {
+                /* 前景色を決定 */
+                if (cell->attr.flags & ATTR_FG_TRUECOLOR) {
+                    /* Truecolor前景色 */
+                    get_rgb_color(cell->attr.fg_rgb, &temp_fg_color);
+                    fg_color = &temp_fg_color;
+                } else if (fg_idx == 7) {
+                    /* デフォルト白はカスタム色を使用 */
+                    fg_color = &g_display.xft_fg;
+                } else {
+                    /* 256色パレット */
+                    fg_color = get_color(fg_idx);
+                }
             }
 
             /* 文字を描画 */

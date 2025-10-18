@@ -6,8 +6,14 @@
 #include "koteiterm.h"
 #include "display.h"
 #include "terminal.h"
+#include "pty.h"
 #include <signal.h>
 #include <unistd.h>
+#include <sys/select.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <X11/Xlib.h>
 
 /* グローバルターミナル状態 */
 TerminalState g_term = {
@@ -145,29 +151,116 @@ void cleanup(void)
     display_cleanup();
 }
 
+/* stdin事前読み取りバッファ（グローバル） */
+static char g_stdin_buffer[65536];
+static size_t g_stdin_buffer_len = 0;
+static size_t g_stdin_buffer_pos = 0;
+
 /* メインループ */
 static void main_loop(void)
 {
     char buffer[4096];
+    bool stdin_enabled = (g_stdin_buffer_len > 0);  /* 事前読み取りデータがある場合に有効 */
+
+    if (g_debug && stdin_enabled) {
+        printf("stdin入力モードが有効です（%zu バイトのデータ）\n", g_stdin_buffer_len);
+    }
 
     if (g_debug) {
         printf("メインループを開始します（ウィンドウを閉じるかCtrl+Cで終了）\n");
     }
 
+    /* X11とPTYのファイルディスクリプタを取得 */
+    extern DisplayState g_display;
+    extern PtyState g_pty;
+    int x11_fd = ConnectionNumber(g_display.display);
+    int pty_fd = g_pty.master_fd;
+
     /* イベントループ */
     while (g_term.running) {
-        /* X11イベントを処理 */
-        if (!display_handle_events()) {
-            /* ウィンドウが閉じられた */
-            g_term.running = false;
+        fd_set readfds;
+        struct timeval tv;
+        int max_fd = 0;
+
+        FD_ZERO(&readfds);
+
+        /* X11のfdを監視 */
+        FD_SET(x11_fd, &readfds);
+        if (x11_fd > max_fd) max_fd = x11_fd;
+
+        /* PTYのfdを監視 */
+        FD_SET(pty_fd, &readfds);
+        if (pty_fd > max_fd) max_fd = pty_fd;
+
+        /* タイムアウト設定（約60 FPS） */
+        tv.tv_sec = 0;
+        tv.tv_usec = 16666;
+
+        int ret = select(max_fd + 1, &readfds, NULL, NULL, &tv);
+        if (ret < 0) {
+            if (errno == EINTR) {
+                continue;  /* シグナル割り込み、継続 */
+            }
+            perror("select");
             break;
         }
 
+        /* X11イベントを処理 */
+        if (FD_ISSET(x11_fd, &readfds) || XPending(g_display.display) > 0) {
+            if (!display_handle_events()) {
+                /* ウィンドウが閉じられた */
+                g_term.running = false;
+                break;
+            }
+        }
+
         /* PTYからデータを読み取る */
-        ssize_t n = pty_read(buffer, sizeof(buffer) - 1);
-        if (n > 0) {
-            /* ターミナルバッファに書き込む */
-            terminal_write(buffer, n);
+        if (FD_ISSET(pty_fd, &readfds)) {
+            ssize_t n = pty_read(buffer, sizeof(buffer) - 1);
+            if (n > 0) {
+                /* ターミナルバッファに書き込む */
+                terminal_write(buffer, n);
+            }
+        }
+
+        /* stdinバッファからデータを送信（事前読み取りデータ） */
+        if (stdin_enabled && g_stdin_buffer_pos < g_stdin_buffer_len) {
+            /* 少しずつ送信（一度に最大256バイト） */
+            size_t chunk_size = g_stdin_buffer_len - g_stdin_buffer_pos;
+            if (chunk_size > 256) chunk_size = 256;
+
+            pty_write(g_stdin_buffer + g_stdin_buffer_pos, chunk_size);
+
+            if (g_debug) {
+                fprintf(stderr, "DEBUG: stdinバッファから%zu バイト送信 (残り%zu): ",
+                        chunk_size, g_stdin_buffer_len - g_stdin_buffer_pos - chunk_size);
+                for (size_t i = 0; i < chunk_size && i < 40; i++) {
+                    char ch = g_stdin_buffer[g_stdin_buffer_pos + i];
+                    if (ch >= 32 && ch < 127) {
+                        fprintf(stderr, "%c", ch);
+                    } else if (ch == '\n') {
+                        fprintf(stderr, "\\n");
+                    } else if (ch == '\r') {
+                        fprintf(stderr, "\\r");
+                    } else {
+                        fprintf(stderr, "<%02x>", (unsigned char)ch);
+                    }
+                }
+                fprintf(stderr, "\n");
+            }
+
+            g_stdin_buffer_pos += chunk_size;
+
+            /* 全データ送信完了 */
+            if (g_stdin_buffer_pos >= g_stdin_buffer_len) {
+                if (g_debug) {
+                    fprintf(stderr, "DEBUG: stdinバッファの全データを送信完了\n");
+                }
+                stdin_enabled = false;  /* もう送信するデータがない */
+            }
+
+            /* 少し待機してシェルが処理する時間を与える */
+            usleep(10000);  /* 10ms */
         }
 
         /* 子プロセスの状態をチェック */
@@ -186,9 +279,6 @@ static void main_loop(void)
         display_clear();
         display_render_terminal();
         display_flush();
-
-        /* CPUを使いすぎないように少し待機 */
-        usleep(16666);  /* 約60 FPS */
     }
 }
 
@@ -384,6 +474,37 @@ int main(int argc, char *argv[])
     if (g_truecolor_mode) {
         setenv("KOTEITERM_TRUECOLOR", "1", 1);
         setenv("COLORTERM", "truecolor", 1);
+    }
+
+    /* stdinが端末でない場合（パイプやファイルリダイレクト）、init()前に全データを読み取る */
+    if (!isatty(STDIN_FILENO)) {
+        /* ノンブロッキングモードに設定 */
+        int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+        if (flags >= 0) {
+            fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+        }
+
+        /* 全データを読み取る */
+        while (g_stdin_buffer_len < sizeof(g_stdin_buffer)) {
+            ssize_t n = read(STDIN_FILENO, g_stdin_buffer + g_stdin_buffer_len,
+                           sizeof(g_stdin_buffer) - g_stdin_buffer_len);
+            if (n > 0) {
+                g_stdin_buffer_len += n;
+            } else if (n == 0) {
+                /* EOF */
+                break;
+            } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                /* データがない場合、少し待って再試行 */
+                usleep(1000);  /* 1ms */
+            } else {
+                /* エラー */
+                break;
+            }
+        }
+
+        if (g_debug && g_stdin_buffer_len > 0) {
+            fprintf(stderr, "DEBUG: init()前にstdinから%zu バイト読み取りました\n", g_stdin_buffer_len);
+        }
     }
 
     /* 初期化 */

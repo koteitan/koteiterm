@@ -78,6 +78,27 @@ make
 ./koteiterm --debug-key # stdoujにキー入力のデバッグ情報を表示
 ```
 
+## stdin入力
+
+koteitermは、パイプやファイルリダイレクト経由でstdinからコマンドを受け取ることができます：
+
+```bash
+# パイプ経由でコマンド送信
+echo "ls -la" | ./koteiterm
+
+# ファイルリダイレクト
+./koteiterm < commands.txt
+
+# 複数コマンド
+printf "pwd\nls\ndate\n" | ./koteiterm
+```
+
+**動作仕様:**
+- stdinが端末（tty）の場合：X11キーボード入力のみを使用（通常モード）
+- stdinがパイプまたはファイルの場合：stdinからの入力も同時に受け付ける
+- stdinがEOFに達しても、ターミナルウィンドウは開いたまま（キーボード入力は継続可能）
+
+
 ### 色の指定方法
 
  | 指定方法|例|

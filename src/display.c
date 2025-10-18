@@ -831,43 +831,18 @@ bool display_handle_events(void)
                             XSetSelectionOwner(g_display.display, g_display.clipboard_atom,
                                               g_display.window, CurrentTime);
 
-                            /* WSLg互換性のため、winclip.exeまたはPowerShellを使用 */
-                            /* winclip.exeが利用可能ならそれを使用（安全で高速） */
+                            /* WSLg互換性のため、winclip.exeを使用（セキュリティ上PowerShell非使用） */
                             FILE *clip = popen("winclip.exe set 2>/dev/null", "w");
                             if (clip) {
                                 fwrite(selection_text, 1, strlen(selection_text), clip);
                                 int status = pclose(clip);
                                 if (status == 0 && g_debug) {
                                     fprintf(stderr, "DEBUG: マウス選択でwinclip.exe経由でWindowsクリップボードにコピー\n");
+                                } else if (g_debug) {
+                                    fprintf(stderr, "DEBUG: winclip.exe failed (status=%d)\n", status);
                                 }
-                            } else {
-                                /* winclip.exeが使えない場合はPowerShell/Base64経由 */
-                                size_t len = strlen(selection_text);
-                                size_t b64_len = ((len + 2) / 3) * 4;
-                                char *b64 = malloc(b64_len + 1);
-                                if (b64) {
-                                    static const char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-                                    size_t i, j;
-                                    for (i = 0, j = 0; i < len; i += 3, j += 4) {
-                                        uint32_t n = (unsigned char)selection_text[i] << 16;
-                                        if (i + 1 < len) n |= (unsigned char)selection_text[i + 1] << 8;
-                                        if (i + 2 < len) n |= (unsigned char)selection_text[i + 2];
-                                        b64[j] = base64_chars[(n >> 18) & 0x3F];
-                                        b64[j + 1] = base64_chars[(n >> 12) & 0x3F];
-                                        b64[j + 2] = (i + 1 < len) ? base64_chars[(n >> 6) & 0x3F] : '=';
-                                        b64[j + 3] = (i + 2 < len) ? base64_chars[n & 0x3F] : '=';
-                                    }
-                                    b64[j] = '\0';
-                                    char cmd[8192];
-                                    snprintf(cmd, sizeof(cmd),
-                                        "powershell.exe -Command \"[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s')) | Set-Clipboard\" 2>/dev/null",
-                                        b64);
-                                    int ret = system(cmd);
-                                    free(b64);
-                                    if (ret == 0 && g_debug) {
-                                        fprintf(stderr, "DEBUG: マウス選択でPowerShell/Base64経由でWindowsクリップボードにコピー\n");
-                                    }
-                                }
+                            } else if (g_debug) {
+                                fprintf(stderr, "DEBUG: winclip.exe not available\n");
                             }
 
                             if (g_debug) {
@@ -889,13 +864,8 @@ bool display_handle_events(void)
                         fprintf(stderr, "DEBUG: 中ボタンクリック、Windowsクリップボードから貼り付け\n");
                     }
 
-                    /* WSLg互換性のため、winclip.exeまたはPowerShellを使用 */
-                    /* winclip.exeが利用可能ならそれを使用（安全で高速） */
+                    /* WSLg互換性のため、winclip.exeを使用（セキュリティ上PowerShell非使用） */
                     FILE *paste = popen("winclip.exe get 2>/dev/null", "r");
-                    if (!paste) {
-                        /* winclip.exeが使えない場合はPowerShell/一時ファイル経由 */
-                        paste = popen("powershell.exe -Command \"\\$tmp = Join-Path \\$env:TEMP 'koteiterm_clip.txt'; Add-Type -AssemblyName PresentationCore; [IO.File]::WriteAllText(\\$tmp, [Windows.Clipboard]::GetText(), [System.Text.Encoding]::UTF8); Get-Content -Encoding UTF8 -Raw \\$tmp; Remove-Item \\$tmp\" 2>/dev/null", "r");
-                    }
                     if (paste) {
                         char buffer[8192];
                         size_t total_len = 0;
@@ -905,20 +875,15 @@ bool display_handle_events(void)
                         while ((n = fread(buffer + total_len, 1, sizeof(buffer) - total_len - 1, paste)) > 0) {
                             total_len += n;
                         }
-                        pclose(paste);
+                        int status = pclose(paste);
 
-                        if (total_len > 0) {
+                        if (total_len > 0 && status == 0) {
                             if (g_debug) {
-                                fprintf(stderr, "DEBUG: PowerShellから読み取ったデータ (hex): ");
+                                fprintf(stderr, "DEBUG: winclip.exeから読み取ったデータ (hex): ");
                                 for (size_t i = 0; i < total_len && i < 32; i++) {
                                     fprintf(stderr, "%02x ", (unsigned char)buffer[i]);
                                 }
                                 fprintf(stderr, "\n");
-                            }
-
-                            /* 末尾の\r\nを削除（PowerShellが追加する） */
-                            while (total_len > 0 && (buffer[total_len - 1] == '\r' || buffer[total_len - 1] == '\n')) {
-                                total_len--;
                             }
 
                             /* Windowsの改行(CRLF)をUnix形式(LF)に変換 */
@@ -941,20 +906,20 @@ bool display_handle_events(void)
                             }
 
                             if (g_debug) {
-                                fprintf(stderr, "DEBUG: 中ボタンでpowershell.exe経由で貼り付け (読み取り: %zu bytes, 出力: %zu bytes)\n", total_len, out_len);
+                                fprintf(stderr, "DEBUG: 中ボタンでwinclip.exe経由で貼り付け (読み取り: %zu bytes, 出力: %zu bytes)\n", total_len, out_len);
                             }
                         } else {
-                            /* PowerShellが失敗した場合はX11 PRIMARY選択にフォールバック */
+                            /* winclip.exeが失敗した場合はX11 PRIMARY選択にフォールバック */
                             if (g_debug) {
-                                fprintf(stderr, "DEBUG: PowerShell失敗、PRIMARY選択にフォールバック\n");
+                                fprintf(stderr, "DEBUG: winclip.exe失敗、PRIMARY選択にフォールバック\n");
                             }
                             XConvertSelection(g_display.display, XA_PRIMARY, XA_STRING,
                                              XA_PRIMARY, g_display.window, CurrentTime);
                         }
                     } else {
-                        /* powershell.exeが使えない場合はX11 PRIMARY選択にフォールバック */
+                        /* winclip.exeが使えない場合はX11 PRIMARY選択にフォールバック */
                         if (g_debug) {
-                            fprintf(stderr, "DEBUG: PowerShell使用不可、PRIMARY選択にフォールバック\n");
+                            fprintf(stderr, "DEBUG: winclip.exe使用不可、PRIMARY選択にフォールバック\n");
                         }
                         XConvertSelection(g_display.display, XA_PRIMARY, XA_STRING,
                                          XA_PRIMARY, g_display.window, CurrentTime);

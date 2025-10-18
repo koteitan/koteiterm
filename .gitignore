@@ -4,8 +4,6 @@ obj/
 *.o
 *.a
 *.so
-a.out
-test_keycode
 
 # デバッグファイル
 *.dSYM/

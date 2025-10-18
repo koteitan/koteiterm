@@ -19,6 +19,7 @@
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
 #include <util.h>
 #endif
+#include <signal.h>
 
 /* グローバルPTY状態 */
 PtyState g_pty = {

@@ -26,6 +26,9 @@ static int selection_start_y = 0;
 /* クリップボード用の選択テキスト */
 char *selection_text = NULL;  /* 選択されたテキスト（グローバル） */
 
+/* winclip.exeの利用可能性（起動時に1回だけチェック） */
+static bool winclip_available = false;
+
 /* ANSI 16色パレット (Xterm default colors) */
 static const struct {
     unsigned short r, g, b;
@@ -578,6 +581,20 @@ int display_init(int width, int height)
         }
     }
 
+    /* winclip.exeの利用可能性をチェック（WSLg環境判定） */
+    FILE *winclip_test = popen("./winclip.exe get 2>/dev/null || winclip.exe get 2>/dev/null", "r");
+    if (winclip_test) {
+        int status = pclose(winclip_test);
+        winclip_available = (status == 0 || status == 256); /* 空でも成功扱い */
+        if (g_debug) {
+            if (winclip_available) {
+                fprintf(stderr, "DEBUG: winclip.exeが利用可能です（WSLg環境）\n");
+            } else {
+                fprintf(stderr, "DEBUG: winclip.exe使用不可（ネイティブUbuntu環境、X11 PRIMARY/CLIPBOARDを使用）\n");
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -831,19 +848,21 @@ bool display_handle_events(void)
                             XSetSelectionOwner(g_display.display, g_display.clipboard_atom,
                                               g_display.window, CurrentTime);
 
-                            /* クリップボードツールを使用してシステムクリップボードにコピー */
-                            /* WSLg: winclip.exe, Native Ubuntu: xclip */
-                            FILE *clip = popen("./winclip.exe set 2>/dev/null || winclip.exe set 2>/dev/null || xclip -selection clipboard 2>/dev/null", "w");
-                            if (clip) {
-                                fwrite(selection_text, 1, strlen(selection_text), clip);
-                                int status = pclose(clip);
-                                if (status == 0 && g_debug) {
-                                    fprintf(stderr, "DEBUG: マウス選択でクリップボードツール経由でコピー\n");
-                                } else if (g_debug) {
-                                    fprintf(stderr, "DEBUG: クリップボードツールコピー失敗 (status=%d)\n", status);
+                            /* WSLg環境のみwinclip.exeでWindowsクリップボードにもコピー */
+                            /* ネイティブUbuntu環境ではX11 PRIMARY/CLIPBOARDのみ使用 */
+                            if (winclip_available) {
+                                FILE *clip = popen("./winclip.exe set 2>/dev/null || winclip.exe set 2>/dev/null", "w");
+                                if (clip) {
+                                    fwrite(selection_text, 1, strlen(selection_text), clip);
+                                    int status = pclose(clip);
+                                    if (status == 0 && g_debug) {
+                                        fprintf(stderr, "DEBUG: マウス選択でwinclip.exe経由でWindowsクリップボードにコピー\n");
+                                    } else if (g_debug) {
+                                        fprintf(stderr, "DEBUG: winclip.exeコピー失敗 (status=%d)\n", status);
+                                    }
                                 }
                             } else if (g_debug) {
-                                fprintf(stderr, "DEBUG: クリップボードツール使用不可\n");
+                                fprintf(stderr, "DEBUG: X11 PRIMARY/CLIPBOARDのみ使用（ネイティブUbuntu環境）\n");
                             }
 
                             if (g_debug) {
@@ -859,62 +878,68 @@ bool display_handle_events(void)
                         }
                     }
                 } else if (event.xbutton.button == Button2) {
-                    /* 中ボタン: Windowsクリップボードから貼り付け（WSLg互換性） */
+                    /* 中ボタン: クリップボードから貼り付け */
                     extern bool g_debug;
                     if (g_debug) {
-                        fprintf(stderr, "DEBUG: 中ボタンクリック、Windowsクリップボードから貼り付け\n");
+                        fprintf(stderr, "DEBUG: 中ボタンクリック、クリップボードから貼り付け\n");
                     }
 
-                    /* クリップボードツールを使用してシステムクリップボードから読み取る */
-                    /* WSLg: winclip.exe, Native Ubuntu: xclip */
-                    FILE *paste = popen("./winclip.exe get 2>/dev/null || winclip.exe get 2>/dev/null || xclip -selection clipboard -o 2>/dev/null", "r");
-                    if (paste) {
-                        char buffer[8192];
-                        size_t total_len = 0;
-                        size_t n;
+                    if (winclip_available) {
+                        /* WSLg環境: winclip.exeでWindowsクリップボードから読み取り */
+                        FILE *paste = popen("./winclip.exe get 2>/dev/null || winclip.exe get 2>/dev/null", "r");
+                        if (paste) {
+                            char buffer[8192];
+                            size_t total_len = 0;
+                            size_t n;
 
-                        /* すべてのデータを読み取る */
-                        while ((n = fread(buffer + total_len, 1, sizeof(buffer) - total_len - 1, paste)) > 0) {
-                            total_len += n;
-                        }
-                        int status = pclose(paste);
+                            /* すべてのデータを読み取る */
+                            while ((n = fread(buffer + total_len, 1, sizeof(buffer) - total_len - 1, paste)) > 0) {
+                                total_len += n;
+                            }
+                            int status = pclose(paste);
 
-                        if (total_len > 0 && status == 0) {
-                            if (g_debug) {
-                                fprintf(stderr, "DEBUG: クリップボードツールから読み取ったデータ (hex): ");
-                                for (size_t i = 0; i < total_len && i < 32; i++) {
-                                    fprintf(stderr, "%02x ", (unsigned char)buffer[i]);
+                            if (total_len > 0 && status == 0) {
+                                if (g_debug) {
+                                    fprintf(stderr, "DEBUG: winclip.exeから読み取ったデータ (hex): ");
+                                    for (size_t i = 0; i < total_len && i < 32; i++) {
+                                        fprintf(stderr, "%02x ", (unsigned char)buffer[i]);
+                                    }
+                                    fprintf(stderr, "\n");
                                 }
-                                fprintf(stderr, "\n");
-                            }
 
-                            /* Windowsの改行(CRLF)をUnix形式(LF)に変換 */
-                            char output[8192];
-                            size_t out_len = 0;
-                            for (size_t i = 0; i < total_len; i++) {
-                                if (buffer[i] == '\r' && i + 1 < total_len && buffer[i + 1] == '\n') {
-                                    /* CRをスキップ、次のLFのみ使う */
-                                    continue;
-                                } else if (buffer[i] == '\r') {
-                                    /* 単独のCRをLFに変換 */
-                                    output[out_len++] = '\n';
-                                } else {
-                                    output[out_len++] = buffer[i];
+                                /* Windowsの改行(CRLF)をUnix形式(LF)に変換 */
+                                char output[8192];
+                                size_t out_len = 0;
+                                for (size_t i = 0; i < total_len; i++) {
+                                    if (buffer[i] == '\r' && i + 1 < total_len && buffer[i + 1] == '\n') {
+                                        /* CRをスキップ、次のLFのみ使う */
+                                        continue;
+                                    } else if (buffer[i] == '\r') {
+                                        /* 単独のCRをLFに変換 */
+                                        output[out_len++] = '\n';
+                                    } else {
+                                        output[out_len++] = buffer[i];
+                                    }
                                 }
-                            }
 
-                            if (out_len > 0) {
-                                pty_write(output, out_len);
-                            }
+                                if (out_len > 0) {
+                                    pty_write(output, out_len);
+                                }
 
-                            if (g_debug) {
-                                fprintf(stderr, "DEBUG: 中ボタンでクリップボードツール経由で貼り付け (読み取り: %zu bytes, 出力: %zu bytes)\n", total_len, out_len);
+                                if (g_debug) {
+                                    fprintf(stderr, "DEBUG: 中ボタンでwinclip.exe経由でWindowsクリップボードから貼り付け (読み取り: %zu bytes, 出力: %zu bytes)\n", total_len, out_len);
+                                }
+                            } else if (g_debug) {
+                                fprintf(stderr, "DEBUG: winclip.exeから読み取りなし (status=%d)\n", status);
                             }
-                        } else if (g_debug) {
-                            fprintf(stderr, "DEBUG: クリップボードツール失敗 (status=%d, bytes=%zu)\n", status, total_len);
                         }
-                    } else if (g_debug) {
-                        fprintf(stderr, "DEBUG: クリップボードツール使用不可\n");
+                    } else {
+                        /* ネイティブUbuntu環境: X11 CLIPBOARDから読み取り（SelectionNotifyで処理） */
+                        if (g_debug) {
+                            fprintf(stderr, "DEBUG: X11 CLIPBOARDから読み取り（ネイティブUbuntu環境）\n");
+                        }
+                        XConvertSelection(g_display.display, g_display.clipboard_atom, XA_STRING,
+                                        g_display.clipboard_atom, g_display.window, CurrentTime);
                     }
                 }
                 break;

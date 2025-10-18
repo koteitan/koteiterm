@@ -100,28 +100,32 @@ printf "pwd\nls\ndate\n" | ./koteiterm
 
 ## スクリーンショット機能 (Media Copy)
 
-VT220のMedia Copy機能により、画面内容をテキストとして出力できます：
-
-```bash
-# ESC[5i で画面をキャプチャ、ESC[4i で出力
-printf 'ls --color=always\n\033[5i\033[4i' | ./koteiterm > screenshot.txt
-
-# プレーンテキスト（色なし）で出力
-printf 'ls --color=always\n\033[5i\033[4;0i' | ./koteiterm > screenshot_plain.txt
-```
+VT220のMedia Copy機能により、画面内容をテキストとして出力できます。koteitermは、stdinとstdout（シェル出力）の**両方**からMCシーケンスを処理します。
 
 **エスケープシーケンス:**
 - `ESC[5i` - 現在の画面内容をキャプチャ
 - `ESC[4i` - ANSIエスケープシーケンス付きで出力（デフォルト）
 - `ESC[4;0i` - プレーンテキストで出力
 
-**使用例:**
+**基本的な使用例:**
 ```bash
-# コマンド実行後に画面をキャプチャして保存
+# stdin から MC シーケンスを送信してスクリーンショット
+printf 'ls --color=always\n\033[5i\033[4i' | ./koteiterm > screenshot.txt
+
+# プレーンテキスト（色なし）で出力
+printf 'ls --color=always\n\033[5i\033[4;0i' | ./koteiterm > screenshot_plain.txt
+
+# 複数コマンドの実行結果をキャプチャ
+printf 'pwd\nls\n\033[5i\033[4i' | ./koteiterm > output.txt
+```
+
+**応用例:**
+```bash
+# システム情報をキャプチャして保存
 echo -e "neofetch\n\033[5i\033[4i" | ./koteiterm > system_info.txt
 
-# 色付きで画面内容を別のターミナルで再生
-printf 'htop\n\033[5i\033[4i' | ./koteiterm | cat
+# シェル出力からの MC シーケンス（アプリケーションが MC を出力する場合も動作）
+# 注: stdin からの MC はシェルに送られず、koteiterm が直接処理します
 ```
 
 ### 色の指定方法

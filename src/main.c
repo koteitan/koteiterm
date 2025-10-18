@@ -156,6 +156,63 @@ static char g_stdin_buffer[65536];
 static size_t g_stdin_buffer_len = 0;
 static size_t g_stdin_buffer_pos = 0;
 
+/**
+ * stdin から MC (Media Copy) シーケンスを検出して処理する
+ * @param data データバッファ
+ * @param size データサイズ
+ * @param mc_start MC シーケンスの開始位置を格納（出力パラメータ）
+ * @return MC シーケンスの長さ（0 = MC シーケンスなし）
+ */
+static size_t check_and_handle_mc_sequence(const char *data, size_t size, size_t *mc_start)
+{
+    extern bool g_debug;
+
+    /* バッファ内で ESC を探す */
+    for (size_t i = 0; i < size; i++) {
+        if (data[i] != '\x1B') {
+            continue;
+        }
+
+        /* ESC[ で始まるかチェック */
+        if (i + 1 >= size || data[i + 1] != '[') {
+            continue;
+        }
+
+        /* ESC[5i - スクリーンキャプチャ */
+        if (i + 3 < size && data[i + 2] == '5' && data[i + 3] == 'i') {
+            if (g_debug) {
+                fprintf(stderr, "DEBUG: stdin から ESC[5i を検出（位置%zu）、スクリーンキャプチャ実行\n", i);
+            }
+            terminal_capture_screen();
+            *mc_start = i;
+            return 4;
+        }
+
+        /* ESC[4;0i - プレーンテキスト出力 */
+        if (i + 5 < size && data[i + 2] == '4' && data[i + 3] == ';' &&
+            data[i + 4] == '0' && data[i + 5] == 'i') {
+            if (g_debug) {
+                fprintf(stderr, "DEBUG: stdin から ESC[4;0i を検出（位置%zu）、プレーンテキスト出力実行\n", i);
+            }
+            terminal_print_screen(true);
+            *mc_start = i;
+            return 6;
+        }
+
+        /* ESC[4i - ANSIエスケープ付き出力 */
+        if (i + 3 < size && data[i + 2] == '4' && data[i + 3] == 'i') {
+            if (g_debug) {
+                fprintf(stderr, "DEBUG: stdin から ESC[4i を検出（位置%zu）、ANSI出力実行\n", i);
+            }
+            terminal_print_screen(false);
+            *mc_start = i;
+            return 4;
+        }
+    }
+
+    return 0;
+}
+
 /* メインループ */
 static void main_loop(void)
 {
@@ -229,27 +286,63 @@ static void main_loop(void)
             size_t chunk_size = g_stdin_buffer_len - g_stdin_buffer_pos;
             if (chunk_size > 256) chunk_size = 256;
 
-            pty_write(g_stdin_buffer + g_stdin_buffer_pos, chunk_size);
+            /* MC シーケンスをチェック（シェルに渡す前に傍受） */
+            size_t mc_start = 0;
+            size_t mc_len = check_and_handle_mc_sequence(
+                g_stdin_buffer + g_stdin_buffer_pos, chunk_size, &mc_start);
 
-            if (g_debug) {
-                fprintf(stderr, "DEBUG: stdinバッファから%zu バイト送信 (残り%zu): ",
-                        chunk_size, g_stdin_buffer_len - g_stdin_buffer_pos - chunk_size);
-                for (size_t i = 0; i < chunk_size && i < 40; i++) {
-                    char ch = g_stdin_buffer[g_stdin_buffer_pos + i];
-                    if (ch >= 32 && ch < 127) {
-                        fprintf(stderr, "%c", ch);
-                    } else if (ch == '\n') {
-                        fprintf(stderr, "\\n");
-                    } else if (ch == '\r') {
-                        fprintf(stderr, "\\r");
-                    } else {
-                        fprintf(stderr, "<%02x>", (unsigned char)ch);
+            if (mc_len > 0) {
+                /* MC シーケンスの前のデータを送信 */
+                if (mc_start > 0) {
+                    pty_write(g_stdin_buffer + g_stdin_buffer_pos, mc_start);
+
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: stdinバッファから%zu バイト送信（MC前）: ",
+                                mc_start);
+                        for (size_t i = 0; i < mc_start && i < 40; i++) {
+                            char ch = g_stdin_buffer[g_stdin_buffer_pos + i];
+                            if (ch >= 32 && ch < 127) {
+                                fprintf(stderr, "%c", ch);
+                            } else if (ch == '\n') {
+                                fprintf(stderr, "\\n");
+                            } else if (ch == '\r') {
+                                fprintf(stderr, "\\r");
+                            } else {
+                                fprintf(stderr, "<%02x>", (unsigned char)ch);
+                            }
+                        }
+                        fprintf(stderr, "\n");
                     }
-                }
-                fprintf(stderr, "\n");
-            }
 
-            g_stdin_buffer_pos += chunk_size;
+                    g_stdin_buffer_pos += mc_start;
+                }
+
+                /* MC シーケンスをスキップ（握りつぶす） */
+                g_stdin_buffer_pos += mc_len;
+            } else {
+                /* 通常のデータ、PTYに送信 */
+                pty_write(g_stdin_buffer + g_stdin_buffer_pos, chunk_size);
+
+                if (g_debug) {
+                    fprintf(stderr, "DEBUG: stdinバッファから%zu バイト送信 (残り%zu): ",
+                            chunk_size, g_stdin_buffer_len - g_stdin_buffer_pos - chunk_size);
+                    for (size_t i = 0; i < chunk_size && i < 40; i++) {
+                        char ch = g_stdin_buffer[g_stdin_buffer_pos + i];
+                        if (ch >= 32 && ch < 127) {
+                            fprintf(stderr, "%c", ch);
+                        } else if (ch == '\n') {
+                            fprintf(stderr, "\\n");
+                        } else if (ch == '\r') {
+                            fprintf(stderr, "\\r");
+                        } else {
+                            fprintf(stderr, "<%02x>", (unsigned char)ch);
+                        }
+                    }
+                    fprintf(stderr, "\n");
+                }
+
+                g_stdin_buffer_pos += chunk_size;
+            }
 
             /* 全データ送信完了 */
             if (g_stdin_buffer_pos >= g_stdin_buffer_len) {

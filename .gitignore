@@ -23,3 +23,4 @@ vgcore.*
 # OS生成ファイル
 .DS_Store
 Thumbs.db
+winclip.exe

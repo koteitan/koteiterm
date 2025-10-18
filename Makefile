@@ -1,7 +1,7 @@
 # koteiterm Makefile
 
 # コンパイラとフラグ
-CC = gcc
+CC = cc
 CFLAGS = -Wall -Wextra -Werror -std=gnu11 -g -O2
 CFLAGS += -Iinclude
 CFLAGS += $(shell pkg-config --cflags freetype2 imlib2)

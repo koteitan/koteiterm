@@ -23,9 +23,27 @@ OBJECTS = $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 # 実行ファイル名
 TARGET = $(BINDIR)/koteiterm
 
+# OS検出
+UNAME_S := $(shell uname -s)
+
+# WSL検出（/proc/version内にMicrosoftまたはWSLが含まれる）
+ifeq ($(UNAME_S),Linux)
+    IS_WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1 || echo 0)
+    ifeq ($(IS_WSL),1)
+        NEED_WINCLIP = yes
+    endif
+endif
+
+# winclip.exeのパス
+WINCLIP = winclip.exe
+WINCLIP_DIR = winclip
+
 # デフォルトターゲット
 .PHONY: all
 all: $(TARGET)
+ifeq ($(NEED_WINCLIP),yes)
+	@$(MAKE) -C $(WINCLIP_DIR) install
+endif
 
 # 実行ファイルのビルド
 $(TARGET): $(OBJECTS)
@@ -47,6 +65,9 @@ $(OBJDIR)/color.o: $(SRCDIR)/color.h
 .PHONY: clean
 clean:
 	rm -rf $(OBJDIR) $(TARGET)
+ifeq ($(NEED_WINCLIP),yes)
+	@$(MAKE) -C $(WINCLIP_DIR) clean
+endif
 	@echo "クリーンアップ完了"
 
 # 実行

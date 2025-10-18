@@ -10,10 +10,27 @@ koteitermは、X11とXftを使用したC言語製のターミナルエミュレ�
 
 ## ビルド
 
+### 基本的な依存関係
+
 ```bash
 sudo apt-get install \
   libx11-dev libxft-dev libfontconfig1-dev \
   libfreetype6-dev libimlib2-dev libgif-dev
+```
+
+### WSL/Windows環境でのクリップボード連携
+
+WSL環境でWindowsクリップボードと連携する場合、MinGWクロスコンパイラが必要です：
+
+```bash
+sudo apt-get install mingw-w64
+```
+
+Makefileが自動的にWSL環境を検出し、winclip.exeをビルドします。
+
+### ビルドと実行
+
+```bash
 make
 ./koteiterm
 ```
@@ -22,9 +39,14 @@ make
  |操作|機能|
   |---|---|
   |左ボタンドラッグ|テキスト選択|
-  |中ボタンクリック|貼り付け（PRIMARYクリップボード）|
+  |中ボタンクリック|貼り付け（クリップボード）|
   |マウスホイール|スクロール|
-- 選択されたテキストは自動的にPRIMARYクリップボードにコピーされます
+
+### クリップボード動作
+- **ネイティブLinux環境**: X11のPRIMARY/CLIPBOARD選択を使用（標準的なLinux動作）
+- **WSL環境**: WindowsクリップボードとX11クリップボードの両方に対応
+  - 選択したテキストがWindowsクリップボードにも自動コピーされます
+  - 中ボタンクリックでWindowsクリップボードから貼り付け可能
 
 ## 起動オプション
 

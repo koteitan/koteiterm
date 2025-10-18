@@ -10,53 +10,34 @@ koteitermは、X11とXftを使用したC言語製のターミナルエミュレ�
 
 ## ビルド
 
-### 必要な依存関係
-
 ```bash
 sudo apt-get install libx11-dev libxft-dev libfontconfig1-dev libfreetype6-dev libimlib2-dev libgif-dev
-```
-
-### ビルド方法
-
-```bash
 make
-```
-
-## 実行
-
-```bash
 ./koteiterm
 ```
+## マウス操作
 
-### オプション
+ |操作|機能|
+  |---|---|
+  |左ボタンドラッグ|テキスト選択|
+  |中ボタンクリック|貼り付け（PRIMARYクリップボード）|
+  |マウスホイール|スクロール|
+- 選択されたテキストは自動的にPRIMARYクリップボードにコピーされます
 
-#### 基本オプション
-
-```bash
-./koteiterm --help       # ヘルプを表示
-./koteiterm --version    # バージョン情報を表示
-./koteiterm --debug-key  # キー入力のデバッグ情報を表示
-```
-
-#### 色設定オプション
+### 起動オプション
 
 ```bash
+./koteiterm --help           # ヘルプを表示
+./koteiterm --version        # バージョン情報を表示
 ./koteiterm -fg <color>      # 前景色を指定
 ./koteiterm -bg <color>      # 背景色を指定
 ./koteiterm -cr <color>      # カーソル色を指定
 ./koteiterm -selbg <color>   # 選択背景色を指定
 ./koteiterm -selfg <color>   # 選択前景色を指定
+./koteiterm --debug-key      # キー入力のデバッグ情報を表示
 ```
 
-**色の指定方法:**
-- 色名: `red`, `blue`, `white`, `black`, `green`, `yellow`, `cyan`, `magenta`, `orange`, `purple`, `pink`, `brown`, `gray` など
-- #RGB形式: `#f00` (赤), `#0f0` (緑), `#00f` (青)
-- #RRGGBB形式: `#ff0000` (赤), `#00ff00` (緑), `#0000ff` (青)
-- rgb:RR/GG/BB形式: `rgb:ff/00/00` (赤)
-- rgb:RRRR/GGGG/BBBB形式: `rgb:ffff/0000/0000` (赤)
-
-**使用例:**
-
+#### 例
 ```bash
 # 緑の文字に黒背景、赤いカーソル
 ./koteiterm -fg green -bg black -cr red
@@ -71,6 +52,13 @@ make
 ./koteiterm -fg cyan -bg "#1a1a1a" -cr orange -selbg "#404040" -selfg yellow
 ```
 
+**色の指定方法:**
+- 色名: `red`, `blue`, `white`, `black`, `green`, `yellow`, `cyan`, `magenta`, `orange`, `purple`, `pink`, `brown`, `gray` など
+- #RGB形式: `#f00` (赤), `#0f0` (緑), `#00f` (青)
+- #RRGGBB形式: `#ff0000` (赤), `#00ff00` (緑), `#0000ff` (青)
+- rgb:RR/GG/BB形式: `rgb:ff/00/00` (赤)
+- rgb:RRRR/GGGG/BBBB形式: `rgb:ffff/0000/0000` (赤)
+
 #### カーソルカスタマイズ
 
 **カーソル形状:**
@@ -80,26 +68,12 @@ make
 ./koteiterm --cursor underline  # 短いアンダーライン
 ./koteiterm --cursor hollow     # 中抜き四角
 ./koteiterm --cursor block      # 中埋め四角
+
+# 画像(透過PNG/透過アニメGIF, 左下が基準点です)
+./koteiterm --cursor "path/to/image.png" 
+./koteiterm --cursor "path/to/image.png:2:4"     # オフセットx:y [pixels]
+./koteiterm --cursor "path/to/image.png:2:4:0.5" # スケール [倍]
 ```
-
-**画像カーソル（PNG/GIF対応）:**
-
-カーソルとして画像ファイルを使用できます：
-
-```bash
-# 基本的な使い方
-./koteiterm --cursor "path/to/image.png"
-
-# オフセット指定（x:y、ピクセル単位）
-./koteiterm --cursor "sushi.png:2:4"
-
-# オフセットとスケール指定（0.0-1.0）
-./koteiterm --cursor "sushi.png:0:0:0.5"
-```
-
-**パラメータ:**
-- **x, y**: カーソル画像の位置オフセット（ピクセル、デフォルト: 0, 0）
-- **scale**: 画像サイズのスケール（0.0〜1.0、デフォルト: 1.0）
 
 **使用例:**
 
@@ -107,25 +81,15 @@ make
 # 寿司アイコンをカーソルとして使用
 ./koteiterm --cursor "sushi.png"
 
-# スケールを50%に縮小
-./koteiterm --cursor "sushi.png:0:0:0.5"
+# 右に3ピクセル、下に2ピクセルオフセット, 0.5倍サイズで表示
+./koteiterm --cursor "sushi.gif:2:-3:0.5"
 ```
 
-## 操作方法
-
-### マウス操作
-
-**テキスト選択:**
-- 左ボタンドラッグ - テキストを選択
-- 選択されたテキストは自動的にPRIMARYクリップボードにコピーされます
-
-**貼り付け:**
-- 中ボタンクリック - PRIMARYクリップボードから貼り付け
-
-**スクロール:**
-- マウスホイール - スクロール（3行）
-
 ## 現在サポートしている機能
+
+## テストされたOS
+- ✅ Ubuntu 22.04 LTS (WSL2)
+- ✅ OpenBSD
 
 ### VT100エスケープシーケンス
 - ✅ カーソル移動
@@ -142,7 +106,7 @@ make
   - **256色対応**（前景色・背景色、ESC[38;5;NmとESC[48;5;Nm）
   - ANSI 16色、6x6x6 RGB色空間（216色）、グレースケール（24段階）
   - 太字、イタリック、下線、反転表示
-- ✅ 高度な機能（VT100完全互換）
+- ✅ 高度な機能
   - **代替スクリーンバッファ** (ESC[?1049h/l, ESC[?47h/l)
   - **スクロール領域設定** (DECSTBM: ESC[r)
   - **カーソル位置保存・復元** (DECSC: ESC 7, DECRC: ESC 8)
@@ -156,10 +120,6 @@ make
   - \\r (キャリッジリターン)
   - \\b (バックスペース)
   - \\t (タブ)
-
-### 文字エンコーディング
-- ✅ 全角文字対応（East Asian Width検出、2セル表示）
-- ✅ Nerd Fontsアイコン表示（vim-airline系）
 
 ### スクロール機能
 - ✅ スクロールバック履歴（1000行）

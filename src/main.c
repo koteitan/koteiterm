@@ -157,13 +157,14 @@ static size_t g_stdin_buffer_len = 0;
 static size_t g_stdin_buffer_pos = 0;
 
 /**
- * stdin から MC (Media Copy) シーケンスを検出して処理する
+ * stdin から MC (Media Copy) シーケンスを検出する
  * @param data データバッファ
  * @param size データサイズ
  * @param mc_start MC シーケンスの開始位置を格納（出力パラメータ）
+ * @param mc_type MC シーケンスの種類を格納（1=ESC[5i, 2=ESC[4i, 3=ESC[4;0i）
  * @return MC シーケンスの長さ（0 = MC シーケンスなし）
  */
-static size_t check_and_handle_mc_sequence(const char *data, size_t size, size_t *mc_start)
+static size_t find_mc_sequence(const char *data, size_t size, size_t *mc_start, int *mc_type)
 {
     extern bool g_debug;
 
@@ -180,32 +181,23 @@ static size_t check_and_handle_mc_sequence(const char *data, size_t size, size_t
 
         /* ESC[5i - スクリーンキャプチャ */
         if (i + 3 < size && data[i + 2] == '5' && data[i + 3] == 'i') {
-            if (g_debug) {
-                fprintf(stderr, "DEBUG: stdin から ESC[5i を検出（位置%zu）、スクリーンキャプチャ実行\n", i);
-            }
-            terminal_capture_screen();
             *mc_start = i;
+            *mc_type = 1;  /* ESC[5i */
             return 4;
         }
 
         /* ESC[4;0i - プレーンテキスト出力 */
         if (i + 5 < size && data[i + 2] == '4' && data[i + 3] == ';' &&
             data[i + 4] == '0' && data[i + 5] == 'i') {
-            if (g_debug) {
-                fprintf(stderr, "DEBUG: stdin から ESC[4;0i を検出（位置%zu）、プレーンテキスト出力実行\n", i);
-            }
-            terminal_print_screen(true);
             *mc_start = i;
+            *mc_type = 3;  /* ESC[4;0i */
             return 6;
         }
 
         /* ESC[4i - ANSIエスケープ付き出力 */
         if (i + 3 < size && data[i + 2] == '4' && data[i + 3] == 'i') {
-            if (g_debug) {
-                fprintf(stderr, "DEBUG: stdin から ESC[4i を検出（位置%zu）、ANSI出力実行\n", i);
-            }
-            terminal_print_screen(false);
             *mc_start = i;
+            *mc_type = 2;  /* ESC[4i */
             return 4;
         }
     }
@@ -288,8 +280,9 @@ static void main_loop(void)
 
             /* MC シーケンスをチェック（シェルに渡す前に傍受） */
             size_t mc_start = 0;
-            size_t mc_len = check_and_handle_mc_sequence(
-                g_stdin_buffer + g_stdin_buffer_pos, chunk_size, &mc_start);
+            int mc_type = 0;
+            size_t mc_len = find_mc_sequence(
+                g_stdin_buffer + g_stdin_buffer_pos, chunk_size, &mc_start, &mc_type);
 
             if (mc_len > 0) {
                 /* MC シーケンスの前のデータを送信 */
@@ -315,6 +308,43 @@ static void main_loop(void)
                     }
 
                     g_stdin_buffer_pos += mc_start;
+                }
+
+                /* ESC[5i の場合、シェルの出力が画面に反映されるまで待機 */
+                if (mc_type == 1) {
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: ESC[5i 検出、PTY出力待機中\n");
+                    }
+
+                    /* PTYからの出力を複数回読み取る */
+                    for (int attempts = 0; attempts < 50; attempts++) {
+                        usleep(20000);  /* 20ms待機 */
+
+                        ssize_t n = pty_read(buffer, sizeof(buffer) - 1);
+                        if (n > 0) {
+                            terminal_write(buffer, n);
+                            if (g_debug) {
+                                fprintf(stderr, "DEBUG: PTYから%zd バイト読み取り\n", n);
+                            }
+                        }
+                    }
+
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: スクリーンキャプチャ実行\n");
+                    }
+                    terminal_capture_screen();
+                } else if (mc_type == 2) {
+                    /* ESC[4i - ANSI出力 */
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: ESC[4i 検出、ANSI出力実行\n");
+                    }
+                    terminal_print_screen(false);
+                } else if (mc_type == 3) {
+                    /* ESC[4;0i - プレーンテキスト出力 */
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: ESC[4;0i 検出、プレーンテキスト出力実行\n");
+                    }
+                    terminal_print_screen(true);
                 }
 
                 /* MC シーケンスをスキップ（握りつぶす） */
@@ -353,7 +383,7 @@ static void main_loop(void)
             }
 
             /* 少し待機してシェルが処理する時間を与える */
-            usleep(10000);  /* 10ms */
+            usleep(50000);  /* 50ms */
         }
 
         /* 子プロセスの状態をチェック */

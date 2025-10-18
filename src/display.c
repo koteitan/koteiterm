@@ -832,7 +832,8 @@ bool display_handle_events(void)
                                               g_display.window, CurrentTime);
 
                             /* WSLg互換性のため、winclip.exeを使用（セキュリティ上PowerShell非使用） */
-                            FILE *clip = popen("winclip.exe set 2>/dev/null", "w");
+                            /* まず./winclip.exeを試し、次にPATHからwinclip.exeを試す */
+                            FILE *clip = popen("./winclip.exe set 2>/dev/null || winclip.exe set 2>/dev/null", "w");
                             if (clip) {
                                 fwrite(selection_text, 1, strlen(selection_text), clip);
                                 int status = pclose(clip);
@@ -865,7 +866,8 @@ bool display_handle_events(void)
                     }
 
                     /* WSLg互換性のため、winclip.exeを使用（セキュリティ上PowerShell非使用） */
-                    FILE *paste = popen("winclip.exe get 2>/dev/null", "r");
+                    /* まず./winclip.exeを試し、次にPATHからwinclip.exeを試す */
+                    FILE *paste = popen("./winclip.exe get 2>/dev/null || winclip.exe get 2>/dev/null", "r");
                     if (paste) {
                         char buffer[8192];
                         size_t total_len = 0;
@@ -908,21 +910,11 @@ bool display_handle_events(void)
                             if (g_debug) {
                                 fprintf(stderr, "DEBUG: 中ボタンでwinclip.exe経由で貼り付け (読み取り: %zu bytes, 出力: %zu bytes)\n", total_len, out_len);
                             }
-                        } else {
-                            /* winclip.exeが失敗した場合はX11 PRIMARY選択にフォールバック */
-                            if (g_debug) {
-                                fprintf(stderr, "DEBUG: winclip.exe失敗、PRIMARY選択にフォールバック\n");
-                            }
-                            XConvertSelection(g_display.display, XA_PRIMARY, XA_STRING,
-                                             XA_PRIMARY, g_display.window, CurrentTime);
+                        } else if (g_debug) {
+                            fprintf(stderr, "DEBUG: winclip.exe失敗 (status=%d, bytes=%zu)\n", status, total_len);
                         }
-                    } else {
-                        /* winclip.exeが使えない場合はX11 PRIMARY選択にフォールバック */
-                        if (g_debug) {
-                            fprintf(stderr, "DEBUG: winclip.exe使用不可、PRIMARY選択にフォールバック\n");
-                        }
-                        XConvertSelection(g_display.display, XA_PRIMARY, XA_STRING,
-                                         XA_PRIMARY, g_display.window, CurrentTime);
+                    } else if (g_debug) {
+                        fprintf(stderr, "DEBUG: winclip.exe使用不可\n");
                     }
                 }
                 break;

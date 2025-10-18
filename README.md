@@ -98,6 +98,31 @@ printf "pwd\nls\ndate\n" | ./koteiterm
 - stdinがパイプまたはファイルの場合：stdinからの入力も同時に受け付ける
 - stdinがEOFに達しても、ターミナルウィンドウは開いたまま（キーボード入力は継続可能）
 
+## スクリーンショット機能 (Media Copy)
+
+VT220のMedia Copy機能により、画面内容をテキストとして出力できます：
+
+```bash
+# ESC[5i で画面をキャプチャ、ESC[4i で出力
+printf 'ls --color=always\n\033[5i\033[4i' | ./koteiterm > screenshot.txt
+
+# プレーンテキスト（色なし）で出力
+printf 'ls --color=always\n\033[5i\033[4;0i' | ./koteiterm > screenshot_plain.txt
+```
+
+**エスケープシーケンス:**
+- `ESC[5i` - 現在の画面内容をキャプチャ
+- `ESC[4i` - ANSIエスケープシーケンス付きで出力（デフォルト）
+- `ESC[4;0i` - プレーンテキストで出力
+
+**使用例:**
+```bash
+# コマンド実行後に画面をキャプチャして保存
+echo -e "neofetch\n\033[5i\033[4i" | ./koteiterm > system_info.txt
+
+# 色付きで画面内容を別のターミナルで再生
+printf 'htop\n\033[5i\033[4i' | ./koteiterm | cat
+```
 
 ### 色の指定方法
 

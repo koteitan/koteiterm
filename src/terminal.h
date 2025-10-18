@@ -52,6 +52,14 @@ typedef struct {
     int end_x, end_y;       /* 選択終了位置 */
 } Selection;
 
+/* スクリーンショットバッファ (Media Copy用) */
+typedef struct {
+    Cell *cells;            /* キャプチャしたセル配列 */
+    int rows;               /* キャプチャ時の行数 */
+    int cols;               /* キャプチャ時の列数 */
+    bool captured;          /* キャプチャ済みかどうか */
+} ScreenshotBuffer;
+
 /* ターミナルバッファ */
 typedef struct {
     Cell *cells;            /* セル配列（rows * cols） */
@@ -72,6 +80,7 @@ typedef struct {
     int scroll_offset;      /* スクロールオフセット（0=最下部） */
     Selection selection;    /* 選択状態 */
     bool pending_wrap;      /* 行末折り返し保留状態 */
+    ScreenshotBuffer screenshot;  /* スクリーンショットバッファ (Media Copy用) */
 } TerminalBuffer;
 
 /* グローバルターミナルバッファ */
@@ -231,5 +240,16 @@ bool terminal_is_selected(int x, int y);
  * @return 選択されたテキスト（mallocで確保、呼び出し側でfree必要）
  */
 char *terminal_get_selected_text(void);
+
+/**
+ * 現在の画面内容をスクリーンショットとしてキャプチャ (ESC[5i)
+ */
+void terminal_capture_screen(void);
+
+/**
+ * キャプチャしたスクリーンショットを出力 (ESC[4i)
+ * @param plain_text trueの場合プレーンテキスト、falseの場合ANSIエスケープ付き
+ */
+void terminal_print_screen(bool plain_text);
 
 #endif /* TERMINAL_H */

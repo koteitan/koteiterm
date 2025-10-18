@@ -1160,6 +1160,22 @@ static void handle_csi_command(char cmd, const char *param_buf)
             break;
         }
 
+        case 'i':  /* MC: Media Copy (Print Screen) */
+        {
+            int mode = (param_count > 0) ? params[0] : 0;
+
+            if (mode == 5) {
+                /* ESC[5i - 画面キャプチャ */
+                terminal_capture_screen();
+            } else if (mode == 4) {
+                /* ESC[4i or ESC[4;0i - スクリーンショット出力 */
+                int format = (param_count > 1) ? params[1] : -1;
+                bool plain_text = (format == 0);
+                terminal_print_screen(plain_text);
+            }
+            break;
+        }
+
         default:
         {
             /* その他のコマンドは無視（デバッグ用に出力） */
@@ -1591,4 +1607,189 @@ char *terminal_get_selected_text(void)
 
     *p = '\0';
     return text;
+}
+
+/**
+ * 現在の画面内容をスクリーンショットとしてキャプチャ (ESC[5i)
+ */
+void terminal_capture_screen(void)
+{
+    int rows = g_terminal.rows;
+    int cols = g_terminal.cols;
+
+    /* 既存のバッファがあれば解放 */
+    if (g_terminal.screenshot.cells) {
+        free(g_terminal.screenshot.cells);
+    }
+
+    /* 新しいバッファを確保 */
+    g_terminal.screenshot.cells = malloc(sizeof(Cell) * rows * cols);
+    if (!g_terminal.screenshot.cells) {
+        fprintf(stderr, "警告: スクリーンショットバッファの確保に失敗しました\n");
+        g_terminal.screenshot.captured = false;
+        return;
+    }
+
+    /* 現在の画面内容をコピー */
+    Cell *src = g_terminal.using_alternate ? g_terminal.alternate_cells : g_terminal.cells;
+    memcpy(g_terminal.screenshot.cells, src, sizeof(Cell) * rows * cols);
+
+    g_terminal.screenshot.rows = rows;
+    g_terminal.screenshot.cols = cols;
+    g_terminal.screenshot.captured = true;
+
+    extern bool g_debug;
+    if (g_debug) {
+        fprintf(stderr, "DEBUG: スクリーンショットをキャプチャしました (%dx%d)\n", cols, rows);
+    }
+}
+
+/**
+ * キャプチャしたスクリーンショットを出力 (ESC[4i)
+ */
+void terminal_print_screen(bool plain_text)
+{
+    if (!g_terminal.screenshot.captured) {
+        fprintf(stderr, "警告: キャプチャされたスクリーンショットがありません\n");
+        return;
+    }
+
+    extern bool g_debug;
+    if (g_debug) {
+        fprintf(stderr, "DEBUG: スクリーンショットを出力します (%s)\n",
+                plain_text ? "プレーンテキスト" : "ANSIエスケープ付き");
+    }
+
+    int rows = g_terminal.screenshot.rows;
+    int cols = g_terminal.screenshot.cols;
+    Cell *cells = g_terminal.screenshot.cells;
+
+    if (plain_text) {
+        /* プレーンテキスト出力 */
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                Cell *cell = &cells[y * cols + x];
+                uint32_t ch = cell->ch;
+
+                /* 継続セルはスキップ */
+                if (ch == WIDE_CHAR_CONTINUATION) {
+                    continue;
+                }
+
+                /* 空白文字はそのまま */
+                if (ch == 0 || ch == ' ') {
+                    printf(" ");
+                    continue;
+                }
+
+                /* UTF-8エンコードして出力 */
+                if (ch < 0x80) {
+                    printf("%c", (char)ch);
+                } else if (ch < 0x800) {
+                    printf("%c%c",
+                           (char)(0xC0 | ((ch >> 6) & 0x1F)),
+                           (char)(0x80 | (ch & 0x3F)));
+                } else if (ch < 0x10000) {
+                    printf("%c%c%c",
+                           (char)(0xE0 | ((ch >> 12) & 0x0F)),
+                           (char)(0x80 | ((ch >> 6) & 0x3F)),
+                           (char)(0x80 | (ch & 0x3F)));
+                } else {
+                    printf("%c%c%c%c",
+                           (char)(0xF0 | ((ch >> 18) & 0x07)),
+                           (char)(0x80 | ((ch >> 12) & 0x3F)),
+                           (char)(0x80 | ((ch >> 6) & 0x3F)),
+                           (char)(0x80 | (ch & 0x3F)));
+                }
+            }
+            printf("\n");
+        }
+    } else {
+        /* ANSIエスケープシーケンス付き出力 */
+        CellAttr current_attr = {0};
+        bool attr_set = false;
+
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                Cell *cell = &cells[y * cols + x];
+                uint32_t ch = cell->ch;
+
+                /* 継続セルはスキップ */
+                if (ch == WIDE_CHAR_CONTINUATION) {
+                    continue;
+                }
+
+                /* 属性が変わった場合、SGRシーケンスを出力 */
+                if (!attr_set ||
+                    cell->attr.fg_color != current_attr.fg_color ||
+                    cell->attr.bg_color != current_attr.bg_color ||
+                    cell->attr.flags != current_attr.flags ||
+                    cell->attr.fg_rgb != current_attr.fg_rgb ||
+                    cell->attr.bg_rgb != current_attr.bg_rgb) {
+
+                    /* リセット */
+                    printf("\033[0m");
+
+                    /* 太字・イタリック・下線・反転 */
+                    if (cell->attr.flags & ATTR_BOLD) printf("\033[1m");
+                    if (cell->attr.flags & ATTR_ITALIC) printf("\033[3m");
+                    if (cell->attr.flags & ATTR_UNDERLINE) printf("\033[4m");
+                    if (cell->attr.flags & ATTR_REVERSE) printf("\033[7m");
+
+                    /* 前景色 */
+                    if (cell->attr.flags & ATTR_FG_TRUECOLOR) {
+                        uint32_t rgb = cell->attr.fg_rgb;
+                        printf("\033[38;2;%d;%d;%dm",
+                               (rgb >> 16) & 0xFF,
+                               (rgb >> 8) & 0xFF,
+                               rgb & 0xFF);
+                    } else {
+                        printf("\033[38;5;%dm", cell->attr.fg_color);
+                    }
+
+                    /* 背景色 */
+                    if (cell->attr.flags & ATTR_BG_TRUECOLOR) {
+                        uint32_t rgb = cell->attr.bg_rgb;
+                        printf("\033[48;2;%d;%d;%dm",
+                               (rgb >> 16) & 0xFF,
+                               (rgb >> 8) & 0xFF,
+                               rgb & 0xFF);
+                    } else {
+                        printf("\033[48;5;%dm", cell->attr.bg_color);
+                    }
+
+                    current_attr = cell->attr;
+                    attr_set = true;
+                }
+
+                /* 文字を出力 */
+                if (ch == 0 || ch == ' ') {
+                    printf(" ");
+                } else if (ch < 0x80) {
+                    printf("%c", (char)ch);
+                } else if (ch < 0x800) {
+                    printf("%c%c",
+                           (char)(0xC0 | ((ch >> 6) & 0x1F)),
+                           (char)(0x80 | (ch & 0x3F)));
+                } else if (ch < 0x10000) {
+                    printf("%c%c%c",
+                           (char)(0xE0 | ((ch >> 12) & 0x0F)),
+                           (char)(0x80 | ((ch >> 6) & 0x3F)),
+                           (char)(0x80 | (ch & 0x3F)));
+                } else {
+                    printf("%c%c%c%c",
+                           (char)(0xF0 | ((ch >> 18) & 0x07)),
+                           (char)(0x80 | ((ch >> 12) & 0x3F)),
+                           (char)(0x80 | ((ch >> 6) & 0x3F)),
+                           (char)(0x80 | (ch & 0x3F)));
+                }
+            }
+
+            /* 行末でリセット */
+            printf("\033[0m\n");
+            attr_set = false;
+        }
+    }
+
+    fflush(stdout);
 }

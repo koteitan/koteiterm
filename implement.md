@@ -81,6 +81,8 @@ koteiterm/
 - `terminal_selection_clear()` - 選択クリア
 - `terminal_is_selected(x, y)` - 選択範囲判定
 - `terminal_get_selected_text()` - 選択テキスト取得
+- `terminal_capture_screen()` - 画面スクリーンショットをキャプチャ (ESC[5i)
+- `terminal_print_screen(plain_text)` - スクリーンショットを出力 (ESC[4i)
 - `utf8_decode(data, size, codepoint)` - UTF-8デコード（内部）
 - `get_char_width(ch)` - 文字幅取得（内部）
 - `parse_csi_params(param_buf, params, ...)` - CSIパラメータパース（内部）
@@ -194,4 +196,27 @@ main_loop()
   → SelectionNotify
     → XGetWindowProperty()
     → pty_write()
+```
+
+### Media Copy (スクリーンショット) フロー
+```
+シェルまたはstdinから ESC[5i
+  → terminal_write()
+    → handle_csi_command('i', "5")
+      → terminal_capture_screen()
+        ├── 現在の画面バッファをコピー（rows * cols）
+        ├── screenshot.cells にメモリ確保
+        └── screenshot.captured = true
+
+シェルまたはstdinから ESC[4i または ESC[4;0i
+  → terminal_write()
+    → handle_csi_command('i', "4" or "4;0")
+      → terminal_print_screen(plain_text)
+        ├── screenshot.captured チェック
+        ├── plain_text == false の場合：
+        │   └── ANSIエスケープ付きで stdout に出力
+        │       （色・太字・下線などの属性を SGR で再現）
+        └── plain_text == true の場合：
+            └── プレーンテキストで stdout に出力
+                （文字のみ、色・属性なし）
 ```

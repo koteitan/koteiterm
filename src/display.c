@@ -24,7 +24,7 @@ static int selection_start_x = 0;
 static int selection_start_y = 0;
 
 /* クリップボード用の選択テキスト */
-static char *selection_text = NULL;
+char *selection_text = NULL;  /* 選択されたテキスト（グローバル） */
 
 /* ANSI 16色パレット (Xterm default colors) */
 static const struct {
@@ -424,6 +424,9 @@ int display_init(int width, int height)
     g_display.wm_delete_window = XInternAtom(g_display.display, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(g_display.display, g_display.window, &g_display.wm_delete_window, 1);
 
+    /* CLIPBOARDアトムを取得 */
+    g_display.clipboard_atom = XInternAtom(g_display.display, "CLIPBOARD", False);
+
     /* イベントマスクを設定 */
     XSelectInput(g_display.display, g_display.window,
                  ExposureMask | KeyPressMask | KeyReleaseMask |
@@ -809,9 +812,27 @@ bool display_handle_events(void)
                             free(selection_text);
                         }
                         selection_text = terminal_get_selected_text();
+                        extern bool g_debug;
+                        if (g_debug) {
+                            fprintf(stderr, "DEBUG: terminal_get_selected_text() returned: %s\n",
+                                   selection_text ? selection_text : "NULL");
+                        }
                         if (selection_text) {
+                            /* PRIMARYとCLIPBOARDの両方を設定（WSLg互換性のため） */
                             XSetSelectionOwner(g_display.display, XA_PRIMARY,
                                               g_display.window, CurrentTime);
+                            XSetSelectionOwner(g_display.display, g_display.clipboard_atom,
+                                              g_display.window, CurrentTime);
+                            if (g_debug) {
+                                fprintf(stderr, "DEBUG: 選択テキストをCLIPBOARDにコピー: [%s]\n", selection_text);
+                                fprintf(stderr, "DEBUG: PRIMARY owner: %lu, CLIPBOARD owner: %lu\n",
+                                       XGetSelectionOwner(g_display.display, XA_PRIMARY),
+                                       XGetSelectionOwner(g_display.display, g_display.clipboard_atom));
+                            }
+                        } else {
+                            if (g_debug) {
+                                fprintf(stderr, "DEBUG: 選択テキストが空のためコピーできません\n");
+                            }
                         }
                     }
                 } else if (event.xbutton.button == Button2) {
@@ -834,6 +855,11 @@ bool display_handle_events(void)
                 ev.property = None;
 
                 if (req->target == XA_STRING && selection_text) {
+                    extern bool g_debug;
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: SelectionRequest受信 - selection=%lu, target=%lu\n",
+                               req->selection, req->target);
+                    }
                     XChangeProperty(g_display.display, req->requestor,
                                    req->property, XA_STRING, 8,
                                    PropModeReplace,
@@ -855,12 +881,20 @@ bool display_handle_events(void)
                     unsigned long nitems, bytes_after;
                     unsigned char *data = NULL;
 
+                    extern bool g_debug;
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: SelectionNotify受信 - selection=%lu, property=%lu\n",
+                               event.xselection.selection, event.xselection.property);
+                    }
                     if (XGetWindowProperty(g_display.display, g_display.window,
                                           event.xselection.property, 0, 8192,
                                           False, AnyPropertyType,
                                           &actual_type, &actual_format,
                                           &nitems, &bytes_after, &data) == Success) {
                         if (data && nitems > 0) {
+                            if (g_debug) {
+                                fprintf(stderr, "DEBUG: 貼り付けデータ受信: %lu bytes\n", nitems);
+                            }
                             /* ターミナルに貼り付け */
                             pty_write((const char *)data, nitems);
                         }

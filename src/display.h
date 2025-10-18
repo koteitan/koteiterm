@@ -17,6 +17,7 @@ typedef struct {
     int width;               /* ウィンドウ幅 */
     int height;              /* ウィンドウ高さ */
     Atom wm_delete_window;   /* ウィンドウ削除メッセージ */
+    Atom clipboard_atom;     /* CLIPBOARDアトム */
     XftDraw *xft_draw;       /* Xft描画コンテキスト */
     XftColor xft_fg;         /* 前景色 */
     XftColor xft_bg;         /* 背景色 */
@@ -42,6 +43,9 @@ typedef struct {
 
 /* グローバルディスプレイ状態 */
 extern DisplayState g_display;
+
+/* 選択テキスト（グローバル） */
+extern char *selection_text;
 
 /* 関数プロトタイプ */
 

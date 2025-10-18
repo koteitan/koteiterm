@@ -27,6 +27,58 @@ bool input_handle_key(XKeyEvent *event)
     extern DisplayState g_display;
     extern bool g_debug_key;
 
+    /* まずkeysymを取得（Ctrl+Shift+C/Vチェックのため） */
+    keysym = XLookupKeysym(event, 0);
+
+    /* Ctrl+Shift+Cの処理（CLIPBOARDにコピー） - 最優先でチェック */
+    if ((event->state & ControlMask) && (event->state & ShiftMask) &&
+        (keysym == XK_C || keysym == XK_c)) {
+        extern char *selection_text;
+        extern bool g_debug;
+        if (g_debug) {
+            fprintf(stderr, "DEBUG: Ctrl+Shift+C検出\n");
+        }
+        /* 選択テキストが既にある場合はCLIPBOARDも設定 */
+        if (selection_text) {
+            XSetSelectionOwner(g_display.display, g_display.clipboard_atom,
+                              g_display.window, CurrentTime);
+
+            /* WSLg互換性のため、clip.exeを使ってWindowsクリップボードにもコピー */
+            FILE *clip = popen("clip.exe 2>/dev/null", "w");
+            if (clip) {
+                fwrite(selection_text, 1, strlen(selection_text), clip);
+                pclose(clip);
+                if (g_debug) {
+                    fprintf(stderr, "DEBUG: clip.exe経由でWindowsクリップボードにコピー\n");
+                }
+            } else {
+                /* clip.exeが使えない場合はxclipを試す */
+                FILE *xclip = popen("xclip -selection clipboard 2>/dev/null", "w");
+                if (xclip) {
+                    fwrite(selection_text, 1, strlen(selection_text), xclip);
+                    pclose(xclip);
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: xclip経由でCLIPBOARDにコピー\n");
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /* Ctrl+Shift+Vの処理（CLIPBOARDから貼り付け） - 最優先でチェック */
+    if ((event->state & ControlMask) && (event->state & ShiftMask) &&
+        (keysym == XK_V || keysym == XK_v)) {
+        extern bool g_debug;
+        if (g_debug) {
+            fprintf(stderr, "DEBUG: Ctrl+Shift+V検出、CLIPBOARDから貼り付け要求 (atom=%lu)\n",
+                   g_display.clipboard_atom);
+        }
+        XConvertSelection(g_display.display, g_display.clipboard_atom, XA_STRING,
+                         g_display.clipboard_atom, g_display.window, CurrentTime);
+        return true;
+    }
+
     if (g_display.xic) {
         /* Alt+` (IME切り替えキー) を無視 */
         if ((event->state & Mod1Mask) && event->keycode == 49) {

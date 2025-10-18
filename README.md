@@ -11,7 +11,9 @@ koteitermは、X11とXftを使用したC言語製のターミナルエミュレ�
 ## ビルド
 
 ```bash
-sudo apt-get install libx11-dev libxft-dev libfontconfig1-dev libfreetype6-dev libimlib2-dev libgif-dev
+sudo apt-get install \
+  libx11-dev libxft-dev libfontconfig1-dev \
+  libfreetype6-dev libimlib2-dev libgif-dev
 make
 ./koteiterm
 ```
@@ -24,46 +26,20 @@ make
   |マウスホイール|スクロール|
 - 選択されたテキストは自動的にPRIMARYクリップボードにコピーされます
 
-### 起動オプション
+## 起動オプション
 
 ```bash
 ./koteiterm --help           # ヘルプを表示
 ./koteiterm --version        # バージョン情報を表示
+
+# 色の指定
 ./koteiterm -fg <color>      # 前景色を指定
 ./koteiterm -bg <color>      # 背景色を指定
 ./koteiterm -cr <color>      # カーソル色を指定
 ./koteiterm -selbg <color>   # 選択背景色を指定
 ./koteiterm -selfg <color>   # 選択前景色を指定
-./koteiterm --debug-key      # キー入力のデバッグ情報を表示
-```
 
-#### 例
-```bash
-# 緑の文字に黒背景、赤いカーソル
-./koteiterm -fg green -bg black -cr red
-
-# 色コード指定
-./koteiterm -fg "#00ff00" -bg "#000000" -cr "#ff0000"
-
-# 選択範囲の色をカスタマイズ
-./koteiterm -selbg blue -selfg white
-
-# 組み合わせ
-./koteiterm -fg cyan -bg "#1a1a1a" -cr orange -selbg "#404040" -selfg yellow
-```
-
-**色の指定方法:**
-- 色名: `red`, `blue`, `white`, `black`, `green`, `yellow`, `cyan`, `magenta`, `orange`, `purple`, `pink`, `brown`, `gray` など
-- #RGB形式: `#f00` (赤), `#0f0` (緑), `#00f` (青)
-- #RRGGBB形式: `#ff0000` (赤), `#00ff00` (緑), `#0000ff` (青)
-- rgb:RR/GG/BB形式: `rgb:ff/00/00` (赤)
-- rgb:RRRR/GGGG/BBBB形式: `rgb:ffff/0000/0000` (赤)
-
-#### カーソルカスタマイズ
-
-**カーソル形状:**
-
-```bash
+# カーソル形状の指定
 ./koteiterm --cursor bar        # 左縦線（デフォルト）
 ./koteiterm --cursor underline  # 短いアンダーライン
 ./koteiterm --cursor hollow     # 中抜き四角
@@ -73,21 +49,28 @@ make
 ./koteiterm --cursor "path/to/image.png" 
 ./koteiterm --cursor "path/to/image.png:2:4"     # オフセットx:y [pixels]
 ./koteiterm --cursor "path/to/image.png:2:4:0.5" # スケール [倍]
+
+# 256色モードの切り替え
+./koteiterm --256color  # 256色モード(デフォルトはtruecolor)
+./koteiterm --debug     # stdoutにデバッグ情報を表示
+./koteiterm --debug-key # stdoujにキー入力のデバッグ情報を表示
 ```
 
-**使用例:**
+### 色の指定方法
 
-```bash
-# 寿司アイコンをカーソルとして使用
-./koteiterm --cursor "sushi.png"
+ | 指定方法|例|
+  |---|---|
+  |色名|`red`, `blue`, `white`, `black` など|
+  |#RGB形式|`"#f00"` (赤), `"#0f0"` (緑), `"#00f"` (青)|
+  |#RRGGBB形式|`"#ff0000"` (赤), `"#00ff00"` (緑), `"#0000ff"` (青)|
+  |rgb:RR/GG/BB形式|`rgb:ff/00/00` (赤)|
+  |rgb:RRRR/GGGG/BBBB形式|`rgb:ffff/0000/0000` (赤)|
 
-# 右に3ピクセル、下に2ピクセルオフセット, 0.5倍サイズで表示
-./koteiterm --cursor "sushi.gif:2:-3:0.5"
-```
+---
 
 ## 現在サポートしている機能
 
-## テストされたOS
+### テストされたOS
 - ✅ Ubuntu 22.04 LTS (WSL2)
 - ✅ OpenBSD
 

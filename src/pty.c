@@ -12,7 +12,13 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
+#if defined(__linux__)
 #include <pty.h>
+#elif defined(__FreeBSD__) || defined(__DragonFly__)
+#include <libutil.h>
+#elif defined(__NetBSD__) || defined(__OpenBSD__)
+#include <util.h>
+#endif
 
 /* グローバルPTY状態 */
 PtyState g_pty = {

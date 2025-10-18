@@ -71,11 +71,75 @@ bool input_handle_key(XKeyEvent *event)
         (keysym == XK_V || keysym == XK_v)) {
         extern bool g_debug;
         if (g_debug) {
-            fprintf(stderr, "DEBUG: Ctrl+Shift+V検出、CLIPBOARDから貼り付け要求 (atom=%lu)\n",
-                   g_display.clipboard_atom);
+            fprintf(stderr, "DEBUG: Ctrl+Shift+V検出、CLIPBOARDから貼り付け\n");
         }
-        XConvertSelection(g_display.display, g_display.clipboard_atom, XA_STRING,
-                         g_display.clipboard_atom, g_display.window, CurrentTime);
+
+        /* WSLg互換性のため、powershell.exeを使ってWindowsクリップボードから読み取る */
+        FILE *paste = popen("powershell.exe -Command \"Get-Clipboard -Raw\" 2>/dev/null", "r");
+        if (paste) {
+            char buffer[8192];  /* 大きめのバッファを確保 */
+            size_t total_len = 0;
+            size_t n;
+
+            /* すべてのデータを読み取る */
+            while ((n = fread(buffer + total_len, 1, sizeof(buffer) - total_len - 1, paste)) > 0) {
+                total_len += n;
+            }
+            pclose(paste);
+
+            if (total_len > 0) {
+                /* 末尾の\r\nを削除（PowerShellが追加する） */
+                while (total_len > 0 && (buffer[total_len - 1] == '\r' || buffer[total_len - 1] == '\n')) {
+                    total_len--;
+                }
+
+                /* Windowsの改行(CRLF)をUnix形式(LF)に変換 */
+                char output[8192];
+                size_t out_len = 0;
+                for (size_t i = 0; i < total_len; i++) {
+                    if (buffer[i] == '\r' && i + 1 < total_len && buffer[i + 1] == '\n') {
+                        /* CRをスキップ、次のLFのみ使う */
+                        continue;
+                    } else if (buffer[i] == '\r') {
+                        /* 単独のCRをLFに変換 */
+                        output[out_len++] = '\n';
+                    } else {
+                        output[out_len++] = buffer[i];
+                    }
+                }
+
+                if (out_len > 0) {
+                    pty_write(output, out_len);
+                }
+
+                if (g_debug) {
+                    fprintf(stderr, "DEBUG: powershell.exe経由でWindowsクリップボードから貼り付け (読み取り: %zu bytes, 出力: %zu bytes)\n", total_len, out_len);
+                }
+            } else if (g_debug) {
+                fprintf(stderr, "DEBUG: powershell.exe経由でWindowsクリップボードから貼り付け (読み取り: 0 bytes)\n");
+            }
+        } else {
+            /* powershell.exeが使えない場合はxclipを試す */
+            FILE *xclip = popen("xclip -selection clipboard -o 2>/dev/null", "r");
+            if (xclip) {
+                char buffer[4096];
+                size_t n;
+                while ((n = fread(buffer, 1, sizeof(buffer), xclip)) > 0) {
+                    pty_write(buffer, n);
+                }
+                pclose(xclip);
+                if (g_debug) {
+                    fprintf(stderr, "DEBUG: xclip経由でCLIPBOARDから貼り付け\n");
+                }
+            } else {
+                /* 最後の手段としてX11 SelectionNotifyを使う */
+                if (g_debug) {
+                    fprintf(stderr, "DEBUG: X11 SelectionNotify経由でCLIPBOARDから貼り付け要求\n");
+                }
+                XConvertSelection(g_display.display, g_display.clipboard_atom, XA_STRING,
+                                 g_display.clipboard_atom, g_display.window, CurrentTime);
+            }
+        }
         return true;
     }
 

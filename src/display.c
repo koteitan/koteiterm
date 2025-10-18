@@ -831,19 +831,19 @@ bool display_handle_events(void)
                             XSetSelectionOwner(g_display.display, g_display.clipboard_atom,
                                               g_display.window, CurrentTime);
 
-                            /* WSLg互換性のため、winclip.exeを使用（セキュリティ上PowerShell非使用） */
-                            /* まず./winclip.exeを試し、次にPATHからwinclip.exeを試す */
-                            FILE *clip = popen("./winclip.exe set 2>/dev/null || winclip.exe set 2>/dev/null", "w");
+                            /* クリップボードツールを使用してシステムクリップボードにコピー */
+                            /* WSLg: winclip.exe, Native Ubuntu: xclip */
+                            FILE *clip = popen("./winclip.exe set 2>/dev/null || winclip.exe set 2>/dev/null || xclip -selection clipboard 2>/dev/null", "w");
                             if (clip) {
                                 fwrite(selection_text, 1, strlen(selection_text), clip);
                                 int status = pclose(clip);
                                 if (status == 0 && g_debug) {
-                                    fprintf(stderr, "DEBUG: マウス選択でwinclip.exe経由でWindowsクリップボードにコピー\n");
+                                    fprintf(stderr, "DEBUG: マウス選択でクリップボードツール経由でコピー\n");
                                 } else if (g_debug) {
-                                    fprintf(stderr, "DEBUG: winclip.exe failed (status=%d)\n", status);
+                                    fprintf(stderr, "DEBUG: クリップボードツールコピー失敗 (status=%d)\n", status);
                                 }
                             } else if (g_debug) {
-                                fprintf(stderr, "DEBUG: winclip.exe not available\n");
+                                fprintf(stderr, "DEBUG: クリップボードツール使用不可\n");
                             }
 
                             if (g_debug) {
@@ -865,9 +865,9 @@ bool display_handle_events(void)
                         fprintf(stderr, "DEBUG: 中ボタンクリック、Windowsクリップボードから貼り付け\n");
                     }
 
-                    /* WSLg互換性のため、winclip.exeを使用（セキュリティ上PowerShell非使用） */
-                    /* まず./winclip.exeを試し、次にPATHからwinclip.exeを試す */
-                    FILE *paste = popen("./winclip.exe get 2>/dev/null || winclip.exe get 2>/dev/null", "r");
+                    /* クリップボードツールを使用してシステムクリップボードから読み取る */
+                    /* WSLg: winclip.exe, Native Ubuntu: xclip */
+                    FILE *paste = popen("./winclip.exe get 2>/dev/null || winclip.exe get 2>/dev/null || xclip -selection clipboard -o 2>/dev/null", "r");
                     if (paste) {
                         char buffer[8192];
                         size_t total_len = 0;
@@ -881,7 +881,7 @@ bool display_handle_events(void)
 
                         if (total_len > 0 && status == 0) {
                             if (g_debug) {
-                                fprintf(stderr, "DEBUG: winclip.exeから読み取ったデータ (hex): ");
+                                fprintf(stderr, "DEBUG: クリップボードツールから読み取ったデータ (hex): ");
                                 for (size_t i = 0; i < total_len && i < 32; i++) {
                                     fprintf(stderr, "%02x ", (unsigned char)buffer[i]);
                                 }
@@ -908,13 +908,13 @@ bool display_handle_events(void)
                             }
 
                             if (g_debug) {
-                                fprintf(stderr, "DEBUG: 中ボタンでwinclip.exe経由で貼り付け (読み取り: %zu bytes, 出力: %zu bytes)\n", total_len, out_len);
+                                fprintf(stderr, "DEBUG: 中ボタンでクリップボードツール経由で貼り付け (読み取り: %zu bytes, 出力: %zu bytes)\n", total_len, out_len);
                             }
                         } else if (g_debug) {
-                            fprintf(stderr, "DEBUG: winclip.exe失敗 (status=%d, bytes=%zu)\n", status, total_len);
+                            fprintf(stderr, "DEBUG: クリップボードツール失敗 (status=%d, bytes=%zu)\n", status, total_len);
                         }
                     } else if (g_debug) {
-                        fprintf(stderr, "DEBUG: winclip.exe使用不可\n");
+                        fprintf(stderr, "DEBUG: クリップボードツール使用不可\n");
                     }
                 }
                 break;

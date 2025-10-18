@@ -823,6 +823,27 @@ bool display_handle_events(void)
                                               g_display.window, CurrentTime);
                             XSetSelectionOwner(g_display.display, g_display.clipboard_atom,
                                               g_display.window, CurrentTime);
+
+                            /* WSLg互換性のため、clip.exeを使ってWindowsクリップボードにもコピー */
+                            FILE *clip = popen("clip.exe 2>/dev/null", "w");
+                            if (clip) {
+                                fwrite(selection_text, 1, strlen(selection_text), clip);
+                                pclose(clip);
+                                if (g_debug) {
+                                    fprintf(stderr, "DEBUG: マウス選択でclip.exe経由でWindowsクリップボードにコピー\n");
+                                }
+                            } else {
+                                /* clip.exeが使えない場合はxclipを試す */
+                                FILE *xclip = popen("xclip -selection clipboard 2>/dev/null", "w");
+                                if (xclip) {
+                                    fwrite(selection_text, 1, strlen(selection_text), xclip);
+                                    pclose(xclip);
+                                    if (g_debug) {
+                                        fprintf(stderr, "DEBUG: マウス選択でxclip経由でCLIPBOARDにコピー\n");
+                                    }
+                                }
+                            }
+
                             if (g_debug) {
                                 fprintf(stderr, "DEBUG: 選択テキストをCLIPBOARDにコピー: [%s]\n", selection_text);
                                 fprintf(stderr, "DEBUG: PRIMARY owner: %lu, CLIPBOARD owner: %lu\n",
@@ -836,9 +857,69 @@ bool display_handle_events(void)
                         }
                     }
                 } else if (event.xbutton.button == Button2) {
-                    /* 中ボタン: 貼り付け */
-                    XConvertSelection(g_display.display, XA_PRIMARY, XA_STRING,
-                                     XA_PRIMARY, g_display.window, CurrentTime);
+                    /* 中ボタン: Windowsクリップボードから貼り付け（WSLg互換性） */
+                    extern bool g_debug;
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: 中ボタンクリック、Windowsクリップボードから貼り付け\n");
+                    }
+
+                    /* WSLg互換性のため、powershell.exeを使ってWindowsクリップボードから読み取る */
+                    FILE *paste = popen("powershell.exe -Command \"Get-Clipboard -Raw\" 2>/dev/null", "r");
+                    if (paste) {
+                        char buffer[8192];
+                        size_t total_len = 0;
+                        size_t n;
+
+                        /* すべてのデータを読み取る */
+                        while ((n = fread(buffer + total_len, 1, sizeof(buffer) - total_len - 1, paste)) > 0) {
+                            total_len += n;
+                        }
+                        pclose(paste);
+
+                        if (total_len > 0) {
+                            /* 末尾の\r\nを削除（PowerShellが追加する） */
+                            while (total_len > 0 && (buffer[total_len - 1] == '\r' || buffer[total_len - 1] == '\n')) {
+                                total_len--;
+                            }
+
+                            /* Windowsの改行(CRLF)をUnix形式(LF)に変換 */
+                            char output[8192];
+                            size_t out_len = 0;
+                            for (size_t i = 0; i < total_len; i++) {
+                                if (buffer[i] == '\r' && i + 1 < total_len && buffer[i + 1] == '\n') {
+                                    /* CRをスキップ、次のLFのみ使う */
+                                    continue;
+                                } else if (buffer[i] == '\r') {
+                                    /* 単独のCRをLFに変換 */
+                                    output[out_len++] = '\n';
+                                } else {
+                                    output[out_len++] = buffer[i];
+                                }
+                            }
+
+                            if (out_len > 0) {
+                                pty_write(output, out_len);
+                            }
+
+                            if (g_debug) {
+                                fprintf(stderr, "DEBUG: 中ボタンでpowershell.exe経由で貼り付け (読み取り: %zu bytes, 出力: %zu bytes)\n", total_len, out_len);
+                            }
+                        } else {
+                            /* PowerShellが失敗した場合はX11 PRIMARY選択にフォールバック */
+                            if (g_debug) {
+                                fprintf(stderr, "DEBUG: PowerShell失敗、PRIMARY選択にフォールバック\n");
+                            }
+                            XConvertSelection(g_display.display, XA_PRIMARY, XA_STRING,
+                                             XA_PRIMARY, g_display.window, CurrentTime);
+                        }
+                    } else {
+                        /* powershell.exeが使えない場合はX11 PRIMARY選択にフォールバック */
+                        if (g_debug) {
+                            fprintf(stderr, "DEBUG: PowerShell使用不可、PRIMARY選択にフォールバック\n");
+                        }
+                        XConvertSelection(g_display.display, XA_PRIMARY, XA_STRING,
+                                         XA_PRIMARY, g_display.window, CurrentTime);
+                    }
                 }
                 break;
 

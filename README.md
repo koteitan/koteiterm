@@ -128,6 +128,52 @@ echo -e "neofetch\n\033[5i\033[4i" | ./koteiterm > system_info.txt
 # 注: stdin からの MC はシェルに送られず、koteiterm が直接処理します
 ```
 
+### データフロー
+
+koteiterm 内部でのデータの流れを以下に示します：
+
+```mermaid
+flowchart TD
+    Start([stdin]) --> StdinBuf[入力バッファ]
+
+    StdinBuf --> MainLoop{メインループ}
+
+    CheckMC -->|通常データ| PTYMaster[PTY マスター fd write]
+    CheckMC -->|MediaCopy シーケンス| MCFunc
+    PTYMaster --> PTYSlave[PTY スレーブ]
+    PTYSlave --> |shell の stdin|Shell{シェル}
+    
+    MainLoop -->|256バイトずつ処理| CheckMC[MediaCopy シーケンス検出]
+    MCFunc["MediaCopy 処理"] --> 破棄
+
+
+    Shell --> |"shell の std{out,err}"| PTYSlave2[PTY スレーブ]
+    PTYSlave2 --> PTYMaster2[PTY マスター fd read]
+
+    VT100[VT100 パーサー]
+    VT100 --> TermBuf[スクリーンバッファ]
+
+    PTYMaster2 --> VT100
+
+    TermBuf -->|"ESC[5i でコピー"| Screenshot[スクリーンショットバッファ]
+    Screenshot -->|"ESC[4i で出力"| StdOut([stdout へ出力])
+
+    TermBuf --> X11Output([X11 ウィンドウ画面表示])
+    カーソル--> X11Output([X11 ウィンドウ画面表示])
+
+```
+
+**主要な処理フロー:**
+1. **stdin → koteiterm**: パイプ入力を `g_stdin_buffer` に読み取り
+2. **MC シーケンス検出**: `find_mc_sequence()` で ESC[5i/4i/4;0i を検出・分岐
+3. **PTY 経由**: 通常データは `pty_write()` でシェルに送信
+4. **シェル実行**: bash/zsh がコマンドを実行し、結果を出力
+5. **PTY から受信**: `pty_read()` でシェルの出力を受け取り
+6. **VT100 パース**: `terminal_write()` でエスケープシーケンスを解析
+7. **スクリーンバッファ**: `g_terminal.cells[]` にセル情報を格納
+8. **画面描画**: X11 + Xft で文字と色を描画
+9. **MC 処理**: ESC[5i でキャプチャ、ESC[4i で stdout に出力
+
 ### 色の指定方法
 
  | 指定方法|例|

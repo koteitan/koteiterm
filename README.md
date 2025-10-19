@@ -1,12 +1,12 @@
 # koteiterm
 
-シンプルなLinuxターミナルエミュレータ
+シンプルな Linux ターミナルエミュレータ
 
 ![koteiterm demo](image/preview.gif)
 
 ## 概要
 
-koteitermは、X11とXftを使用したC言語製のターミナルエミュレータです。VT100エスケープシーケンス、ANSI 16色、UTF-8/日本語表示、Nerd Fontsアイコンをサポートしています。
+koteiterm は、X11 と Xft を使用した C 言語製のターミナルエミュレータです。VT100 エスケープシーケンス、ANSI 16 色、UTF-8/日本語表示、Nerd Fonts アイコンをサポートしています。
 
 ## ビルド
 
@@ -18,15 +18,15 @@ sudo apt-get install \
   libfreetype6-dev libimlib2-dev libgif-dev
 ```
 
-### WSL/Windows環境でのクリップボード連携
+### WSL/Windows 環境でのクリップボード連携
 
-WSL環境でWindowsクリップボードと連携する場合、MinGWクロスコンパイラが必要です：
+WSL 環境で Windows クリップボードと連携する場合、MinGW クロスコンパイラが必要です：
 
 ```bash
 sudo apt-get install mingw-w64
 ```
 
-Makefileが自動的にWSL環境を検出し、winclip.exeをビルドします。
+Makefile が自動的に WSL 環境を検出し、winclip.exe をビルドします。
 
 ### ビルドと実行
 
@@ -43,10 +43,10 @@ make
   |マウスホイール|スクロール|
 
 ### クリップボード動作
-- **ネイティブLinux環境**: X11のPRIMARY/CLIPBOARD選択を使用（標準的なLinux動作）
-- **WSL環境**: WindowsクリップボードとX11クリップボードの両方に対応
-  - 選択したテキストがWindowsクリップボードにも自動コピーされます
-  - 中ボタンクリックでWindowsクリップボードから貼り付け可能
+- **ネイティブ Linux 環境**: X11 の PRIMARY/CLIPBOARD 選択を使用（標準的な Linux 動作）
+- **WSL 環境**: Windows クリップボードと X11 クリップボードの両方に対応
+  - 選択したテキストが Windows クリップボードにも自動コピーされます
+  - 中ボタンクリックで Windows クリップボードから貼り付け可能
 
 ## 起動オプション
 
@@ -74,11 +74,11 @@ make
 
 # 256色モードの切り替え
 ./koteiterm --256color  # 256色モード(デフォルトはtruecolor)
-./koteiterm --debug     # stdoutにデバッグ情報を表示
-./koteiterm --debug-key # stdoujにキー入力のデバッグ情報を表示
+./koteiterm --debug     # stdout にデバッグ情報を表示
+./koteiterm --debug-key # stdout にキー入力のデバッグ情報を表示
 ```
 
-## stdin入力 と Media Copy 機能
+## stdin 入力と Media Copy 機能
 
 koteiterm は、stdin からパイプやファイルリダイレクト経由でキー入力を受け取ることができます。
 また、Media Copy (スクリーンショット) のエスケープシーケンスを送ることによって、画面内容をテキストとして取得できます。
@@ -86,14 +86,14 @@ koteiterm は、stdin からパイプやファイルリダイレクト経由で�
 これを使って、LLM に任意のコマンドを実行させ、人が見るのと同じターミナルの画面内容を取得させるテストが可能です。
 
 ### Media Copy エスケープシーケンス
-下記の VT220のMedia Copy機能により、画面内容をテキストとして出力できます。koteitermは、stdinとstdout（シェル出力）の**両方**からMCシーケンスを処理します。
+下記の VT220 の Media Copy 機能により、画面内容をテキストとして出力できます。koteiterm は、stdin と stdout（シェル出力）の**両方**から MC シーケンスを処理します。
 - `\x1b[5i` - 現在の画面内容をキャプチャ
 - `\x1b[4i` - キャプチャした内容を stdout に出力(エスケープシーケンス付き)
 - `\x1b[4;0i` - キャプチャした内容を stdout に出力(plain text)
 
 ### テストの例
 
-lsコマンドのスクリーンショット
+ls コマンドのスクリーンショット
 ```bash
 (
   echo "ls --color=always"
@@ -104,7 +104,7 @@ lsコマンドのスクリーンショット
 ) | ./koteiterm
 ```
 
-vimのウェルカム画面スクリーンショット
+vim のウェルカム画面スクリーンショット
 ```bash
 (
   echo "vim"
@@ -181,7 +181,7 @@ flowchart TD
 - ✅ Ubuntu 22.04 LTS (WSL2)
 - ✅ OpenBSD
 
-### VT100エスケープシーケンス
+### VT100 エスケープシーケンス
 - ✅ カーソル移動
   - CUU (ESC[A): カーソルを上に移動
   - CUD (ESC[B): カーソルを下に移動
@@ -193,8 +193,8 @@ flowchart TD
   - ED (ESC[J): 画面の一部または全体をクリア
   - EL (ESC[K): 行の一部または全体をクリア
 - ✅ SGR（色と文字属性）
-  - **256色対応**（前景色・背景色、ESC[38;5;NmとESC[48;5;Nm）
-  - ANSI 16色、6x6x6 RGB色空間（216色）、グレースケール（24段階）
+  - **256 色対応**（前景色・背景色、ESC[38;5;Nm と ESC[48;5;Nm）
+  - ANSI 16 色、6x6x6 RGB 色空間（216 色）、グレースケール（24 段階）
   - 太字、イタリック、下線、反転表示
 - ✅ 高度な機能
   - **代替スクリーンバッファ** (ESC[?1049h/l, ESC[?47h/l)
@@ -212,13 +212,13 @@ flowchart TD
   - \\t (タブ)
 
 ### スクロール機能
-- ✅ スクロールバック履歴（1000行）
+- ✅ スクロールバック履歴（1000 行）
 
 ### フォント
-- ✅ デフォルト: HackGen Console NF（日本語+Nerd Fonts統合フォント）
-- ✅ 日本語とNerd Fontsアイコンを同一フォントで表示
-- ✅ WSL環境でWindowsフォントにアクセス可能
-- ✅ fontconfig言語ヒント（`:lang=ja`）で日本語フォント優先
+- ✅ デフォルト: HackGen Console NF（日本語 + Nerd Fonts 統合フォント）
+- ✅ 日本語と Nerd Fonts アイコンを同一フォントで表示
+- ✅ WSL 環境で Windows フォントにアクセス可能
+- ✅ fontconfig 言語ヒント（`:lang=ja`）で日本語フォント優先
 
 ## ライセンス
 

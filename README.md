@@ -78,97 +78,43 @@ make
 ./koteiterm --debug-key # stdoujにキー入力のデバッグ情報を表示
 ```
 
-## stdin入力
+## stdin入力 と Media Copy 機能
 
-koteitermは、パイプやファイルリダイレクト経由でstdinからコマンドを受け取ることができます：
+koteiterm は、stdin からパイプやファイルリダイレクト経由でキー入力を受け取ることができます。
+また、Media Copy (スクリーンショット) のエスケープシーケンスを送ることによって、画面内容をテキストとして取得できます。
 
-```bash
-# パイプ経由でコマンド送信
-echo "ls -la" | ./koteiterm
+これを使って、LLM に任意のコマンドを実行させ、人が見るのと同じターミナルの画面内容を取得させるテストが可能です。
 
-# ファイルリダイレクト
-./koteiterm < commands.txt
+### Media Copy エスケープシーケンス
+下記の VT220のMedia Copy機能により、画面内容をテキストとして出力できます。koteitermは、stdinとstdout（シェル出力）の**両方**からMCシーケンスを処理します。
+- `\x1b[5i` - 現在の画面内容をキャプチャ
+- `\x1b[4i` - キャプチャした内容を stdout に出力(エスケープシーケンス付き)
+- `\x1b[4;0i` - キャプチャした内容を stdout に出力(plain text)
 
-# 複数コマンド
-printf "pwd\nls\ndate\n" | ./koteiterm
-```
-
-**動作仕様:**
-- stdinが端末（tty）の場合：X11キーボード入力のみを使用（通常モード）
-- stdinがパイプまたはファイルの場合：メインループでselectを使ってstdinからの入力をストリーム読み取り
-- データが到着次第、順次処理される（事前の全データ読み込みは行わない）
-- stdinがEOFに達しても、ターミナルウィンドウは開いたまま（キーボード入力は継続可能）
-
-**時系列制御が必要な場合:**
-
-通常のbashパイプ（`(echo "cmd"; sleep 1; echo "next") | ./koteiterm`）では、サブシェル内の全出力が即座にパイプバッファに書き込まれるため、sleepによるタイミング制御はできません。
-
-時系列制御が必要な場合（例：スクリーンショット機能のテスト）は、named pipeを使用してください：
-
-```bash
-# named pipeを作成
-mkfifo /tmp/kotei_input
-
-# koteitermを起動
-./koteiterm < /tmp/kotei_input > output.txt &
-
-# 別のターミナルまたはスクリプトから段階的に入力
-exec 3> /tmp/kotei_input
-echo "ls --color=always" >&3
-# （任意の待機時間）
-printf "\033[5i\033[4i" >&3  # スクリーンショット
-exec 3>&-  # 終了
-
-# クリーンアップ
-rm /tmp/kotei_input
-```
-
-**ワンライナーの例:**
+### テストの例
 
 lsコマンドのスクリーンショット
 ```bash
-mkfifo /tmp/k
-(echo "ls --color=always"; sleep 1.5; printf "\x1b[5i\x1b[4i"; sleep 0.5) > /tmp/k &
-timeout 6 ./koteiterm < /tmp/k
-rm /tmp/k
+(
+  echo "ls --color=always"
+  sleep 1
+  printf "\x1b[5i\x1b[4i"
+  sleep 1
+  echo "exit"
+) | ./koteiterm
 ```
 
 vimのウェルカム画面スクリーンショット
 ```bash
-mkfifo /tmp/k
-(echo "vim"; sleep 2.5; printf "\x1b[5i\x1b[4i"; sleep 0.5) > /tmp/k &
-timeout 8 ./koteiterm < /tmp/k
-rm /tmp/k
-```
-
-## スクリーンショット機能 (Media Copy)
-
-VT220のMedia Copy機能により、画面内容をテキストとして出力できます。koteitermは、stdinとstdout（シェル出力）の**両方**からMCシーケンスを処理します。
-
-**エスケープシーケンス:**
-- `ESC[5i` - 現在の画面内容をキャプチャ
-- `ESC[4i` - ANSIエスケープシーケンス付きで出力（デフォルト）
-- `ESC[4;0i` - プレーンテキストで出力
-
-**基本的な使用例:**
-```bash
-# stdin から MC シーケンスを送信してスクリーンショット
-printf 'ls --color=always\n\033[5i\033[4i' | ./koteiterm > screenshot.txt
-
-# プレーンテキスト（色なし）で出力
-printf 'ls --color=always\n\033[5i\033[4;0i' | ./koteiterm > screenshot_plain.txt
-
-# 複数コマンドの実行結果をキャプチャ
-printf 'pwd\nls\n\033[5i\033[4i' | ./koteiterm > output.txt
-```
-
-**応用例:**
-```bash
-# システム情報をキャプチャして保存
-echo -e "neofetch\n\033[5i\033[4i" | ./koteiterm > system_info.txt
-
-# シェル出力からの MC シーケンス（アプリケーションが MC を出力する場合も動作）
-# 注: stdin からの MC はシェルに送られず、koteiterm が直接処理します
+(
+  echo "vim"
+  sleep 1
+  printf "\x1b[5i\x1b[4i"
+  sleep 1
+  echo ":q!"
+  sleep 1
+  echo "exit"
+) | ./koteiterm
 ```
 
 ### データフロー

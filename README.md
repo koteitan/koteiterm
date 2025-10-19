@@ -95,8 +95,33 @@ printf "pwd\nls\ndate\n" | ./koteiterm
 
 **動作仕様:**
 - stdinが端末（tty）の場合：X11キーボード入力のみを使用（通常モード）
-- stdinがパイプまたはファイルの場合：stdinからの入力も同時に受け付ける
+- stdinがパイプまたはファイルの場合：メインループでselectを使ってstdinからの入力をストリーム読み取り
+- データが到着次第、順次処理される（事前の全データ読み込みは行わない）
 - stdinがEOFに達しても、ターミナルウィンドウは開いたまま（キーボード入力は継続可能）
+
+**時系列制御が必要な場合:**
+
+通常のbashパイプ（`(echo "cmd"; sleep 1; echo "next") | ./koteiterm`）では、サブシェル内の全出力が即座にパイプバッファに書き込まれるため、sleepによるタイミング制御はできません。
+
+時系列制御が必要な場合（例：スクリーンショット機能のテスト）は、named pipeを使用してください：
+
+```bash
+# named pipeを作成
+mkfifo /tmp/kotei_input
+
+# koteitermを起動
+./koteiterm < /tmp/kotei_input > output.txt &
+
+# 別のターミナルまたはスクリプトから段階的に入力
+exec 3> /tmp/kotei_input
+echo "ls --color=always" >&3
+# （任意の待機時間）
+printf "\033[5i\033[4i" >&3  # スクリーンショット
+exec 3>&-  # 終了
+
+# クリーンアップ
+rm /tmp/kotei_input
+```
 
 ## スクリーンショット機能 (Media Copy)
 

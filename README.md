@@ -129,7 +129,7 @@ lsコマンドのスクリーンショット
 ```bash
 mkfifo /tmp/k
 (echo "ls --color=always"; sleep 1.5; printf "\x1b[5i\x1b[4i"; sleep 0.5) > /tmp/k &
-timeout 6 ./koteiterm < /tmp/k > ls_screenshot.txt 2>&1
+timeout 6 ./koteiterm < /tmp/k
 rm /tmp/k
 ```
 
@@ -137,7 +137,7 @@ vimのウェルカム画面スクリーンショット
 ```bash
 mkfifo /tmp/k
 (echo "vim"; sleep 2.5; printf "\x1b[5i\x1b[4i"; sleep 0.5) > /tmp/k &
-timeout 8 ./koteiterm < /tmp/k > vim_screenshot.txt 2>&1
+timeout 8 ./koteiterm < /tmp/k
 rm /tmp/k
 ```
 

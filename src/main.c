@@ -206,14 +206,9 @@ static size_t find_mc_sequence(const char *data, size_t size, size_t *mc_start, 
 }
 
 /* メインループ */
-static void main_loop(void)
+static void main_loop(bool stdin_enabled)
 {
     char buffer[4096];
-    bool stdin_enabled = (g_stdin_buffer_len > 0);  /* 事前読み取りデータがある場合に有効 */
-
-    if (g_debug && stdin_enabled) {
-        printf("stdin入力モードが有効です（%zu バイトのデータ）\n", g_stdin_buffer_len);
-    }
 
     if (g_debug) {
         printf("メインループを開始します（ウィンドウを閉じるかCtrl+Cで終了）\n");
@@ -240,6 +235,12 @@ static void main_loop(void)
         /* PTYのfdを監視 */
         FD_SET(pty_fd, &readfds);
         if (pty_fd > max_fd) max_fd = pty_fd;
+
+        /* stdinのfdを監視（stdin入力モードの場合） */
+        if (stdin_enabled) {
+            FD_SET(STDIN_FILENO, &readfds);
+            if (STDIN_FILENO > max_fd) max_fd = STDIN_FILENO;
+        }
 
         /* タイムアウト設定（約60 FPS） */
         tv.tv_sec = 0;
@@ -272,7 +273,29 @@ static void main_loop(void)
             }
         }
 
-        /* stdinバッファからデータを送信（事前読み取りデータ） */
+        /* stdinからデータを読み取る */
+        if (stdin_enabled && FD_ISSET(STDIN_FILENO, &readfds)) {
+            /* バッファに空きがあれば読み取る */
+            size_t available = sizeof(g_stdin_buffer) - g_stdin_buffer_len;
+            if (available > 0) {
+                ssize_t n = read(STDIN_FILENO, g_stdin_buffer + g_stdin_buffer_len, available);
+                if (n > 0) {
+                    g_stdin_buffer_len += n;
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: stdinから%zd バイト読み取り（バッファ合計: %zu）\n",
+                                n, g_stdin_buffer_len);
+                    }
+                } else if (n == 0) {
+                    /* EOF検出、stdin入力終了 */
+                    stdin_enabled = false;
+                    if (g_debug) {
+                        fprintf(stderr, "DEBUG: stdinがEOFに達しました\n");
+                    }
+                }
+            }
+        }
+
+        /* stdinバッファからデータを送信 */
         if (stdin_enabled && g_stdin_buffer_pos < g_stdin_buffer_len) {
             /* 少しずつ送信（一度に最大256バイト） */
             size_t chunk_size = g_stdin_buffer_len - g_stdin_buffer_pos;
@@ -310,28 +333,25 @@ static void main_loop(void)
                     g_stdin_buffer_pos += mc_start;
                 }
 
-                /* ESC[5i の場合、シェルの出力が画面に反映されるまで待機 */
+                /* ESC[5i - スクリーンキャプチャ */
                 if (mc_type == 1) {
                     if (g_debug) {
-                        fprintf(stderr, "DEBUG: ESC[5i 検出、PTY出力待機中\n");
+                        fprintf(stderr, "DEBUG: ESC[5i 検出、PTY残データを処理してキャプチャ\n");
                     }
 
-                    /* PTYからの出力を複数回読み取る */
-                    for (int attempts = 0; attempts < 50; attempts++) {
-                        usleep(20000);  /* 20ms待機 */
-
+                    /* PTYに読み取り可能なデータがあれば全て処理してからキャプチャ */
+                    while (1) {
                         ssize_t n = pty_read(buffer, sizeof(buffer) - 1);
                         if (n > 0) {
                             terminal_write(buffer, n);
                             if (g_debug) {
                                 fprintf(stderr, "DEBUG: PTYから%zd バイト読み取り\n", n);
                             }
+                        } else {
+                            break;  /* 読み取り可能なデータが無くなった */
                         }
                     }
 
-                    if (g_debug) {
-                        fprintf(stderr, "DEBUG: スクリーンキャプチャ実行\n");
-                    }
                     terminal_capture_screen();
                 } else if (mc_type == 2) {
                     /* ESC[4i - ANSI出力 */
@@ -374,16 +394,24 @@ static void main_loop(void)
                 g_stdin_buffer_pos += chunk_size;
             }
 
-            /* 全データ送信完了 */
+            /* バッファ内の処理済みデータをクリア */
             if (g_stdin_buffer_pos >= g_stdin_buffer_len) {
+                /* 全て処理済み、バッファをリセット */
+                g_stdin_buffer_pos = 0;
+                g_stdin_buffer_len = 0;
                 if (g_debug) {
-                    fprintf(stderr, "DEBUG: stdinバッファの全データを送信完了\n");
+                    fprintf(stderr, "DEBUG: stdinバッファをクリアしました\n");
                 }
-                stdin_enabled = false;  /* もう送信するデータがない */
+            } else if (g_stdin_buffer_pos > 0) {
+                /* 処理済みデータを削除してバッファを前詰め */
+                size_t remaining = g_stdin_buffer_len - g_stdin_buffer_pos;
+                memmove(g_stdin_buffer, g_stdin_buffer + g_stdin_buffer_pos, remaining);
+                g_stdin_buffer_len = remaining;
+                g_stdin_buffer_pos = 0;
+                if (g_debug) {
+                    fprintf(stderr, "DEBUG: stdinバッファを前詰めしました（残り: %zu）\n", remaining);
+                }
             }
-
-            /* 少し待機してシェルが処理する時間を与える */
-            usleep(50000);  /* 50ms */
         }
 
         /* 子プロセスの状態をチェック */
@@ -599,34 +627,17 @@ int main(int argc, char *argv[])
         setenv("COLORTERM", "truecolor", 1);
     }
 
-    /* stdinが端末でない場合（パイプやファイルリダイレクト）、init()前に全データを読み取る */
+    /* stdinが端末でない場合（パイプやファイルリダイレクト）、ノンブロッキングモードに設定 */
+    bool stdin_enabled = false;
     if (!isatty(STDIN_FILENO)) {
-        /* ノンブロッキングモードに設定 */
         int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
         if (flags >= 0) {
             fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
         }
+        stdin_enabled = true;
 
-        /* 全データを読み取る */
-        while (g_stdin_buffer_len < sizeof(g_stdin_buffer)) {
-            ssize_t n = read(STDIN_FILENO, g_stdin_buffer + g_stdin_buffer_len,
-                           sizeof(g_stdin_buffer) - g_stdin_buffer_len);
-            if (n > 0) {
-                g_stdin_buffer_len += n;
-            } else if (n == 0) {
-                /* EOF */
-                break;
-            } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                /* データがない場合、少し待って再試行 */
-                usleep(1000);  /* 1ms */
-            } else {
-                /* エラー */
-                break;
-            }
-        }
-
-        if (g_debug && g_stdin_buffer_len > 0) {
-            fprintf(stderr, "DEBUG: init()前にstdinから%zu バイト読み取りました\n", g_stdin_buffer_len);
+        if (g_debug) {
+            fprintf(stderr, "DEBUG: stdin入力モードが有効です\n");
         }
     }
 
@@ -637,7 +648,7 @@ int main(int argc, char *argv[])
     }
 
     /* メインループ */
-    main_loop();
+    main_loop(stdin_enabled);
 
     /* クリーンアップ */
     cleanup();

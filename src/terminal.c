@@ -1631,8 +1631,8 @@ void terminal_capture_screen(void)
     }
 
     /* 現在の画面内容をコピー */
-    Cell *src = g_terminal.using_alternate ? g_terminal.alternate_cells : g_terminal.cells;
-    memcpy(g_terminal.screenshot.cells, src, sizeof(Cell) * rows * cols);
+    /* 注: 代替スクリーンバッファ使用時も g_terminal.cells が現在アクティブなバッファ */
+    memcpy(g_terminal.screenshot.cells, g_terminal.cells, sizeof(Cell) * rows * cols);
 
     g_terminal.screenshot.rows = rows;
     g_terminal.screenshot.cols = cols;

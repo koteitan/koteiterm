@@ -123,6 +123,16 @@ exec 3>&-  # 終了
 rm /tmp/kotei_input
 ```
 
+**ワンライナーの例:**
+
+```bash
+# lsコマンドのスクリーンショット
+mkfifo /tmp/k; (echo "ls --color=always"; sleep 1.5; printf "\x1b[5i\x1b[4i"; sleep 0.5) > /tmp/k & timeout 6 ./koteiterm < /tmp/k > ls_screenshot.txt 2>&1; rm /tmp/k
+
+# vimのウェルカム画面スクリーンショット
+mkfifo /tmp/k; (echo "vim"; sleep 2.5; printf "\x1b[5i\x1b[4i"; sleep 0.5) > /tmp/k & timeout 8 ./koteiterm < /tmp/k > vim_screenshot.txt 2>&1; rm /tmp/k
+```
+
 ## スクリーンショット機能 (Media Copy)
 
 VT220のMedia Copy機能により、画面内容をテキストとして出力できます。koteitermは、stdinとstdout（シェル出力）の**両方**からMCシーケンスを処理します。

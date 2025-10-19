@@ -584,6 +584,11 @@ int display_init(int width, int height)
     /* winclip.exeの利用可能性をチェック（WSLg環境判定） */
     FILE *winclip_test = popen("./winclip.exe get 2>/dev/null || winclip.exe get 2>/dev/null", "r");
     if (winclip_test) {
+        /* 出力を読み捨てる（バッファがブロックしないように） */
+        char buf[256];
+        while (fgets(buf, sizeof(buf), winclip_test)) {
+            /* 読み捨て */
+        }
         int status = pclose(winclip_test);
         winclip_available = (status == 0 || status == 256); /* 空でも成功扱い */
         if (g_debug) {

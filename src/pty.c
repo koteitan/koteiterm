@@ -4,6 +4,7 @@
  */
 
 #include "pty.h"
+#include "koteiterm.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -107,6 +108,8 @@ int pty_init(int rows, int cols)
 
         /* TERM環境変数を設定 */
         setenv("TERM", "xterm-256color", 1);
+        setenv("TERM_PROGRAM", KOTEITERM_NAME, 1);
+        setenv("TERM_PROGRAM_VERSION", KOTEITERM_VERSION, 1);
 
         /* シェルを実行 */
         execl(shell, shell, NULL);

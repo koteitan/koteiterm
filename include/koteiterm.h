@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 /* バージョン情報 */
+#define KOTEITERM_NAME "koteiterm"
 #define KOTEITERM_VERSION "0.1.0"
 #define KOTEITERM_VERSION_MAJOR 0
 #define KOTEITERM_VERSION_MINOR 1
